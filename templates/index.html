@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Subtitle Downloader</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #ff0000;
+            --primary-dark: #cc0000;
+            --gray-light: #f5f5f5;
+            --gray: #e0e0e0;
+            --dark: #333333;
+            --success: #00c853;
+            --success-light: #e6f4ea;
+            --error: #f44336;
+            --error-light: #fce8e6;
+            --secondary: #0077cc;
+            --secondary-light: #e8f4fd;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: var(--dark);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+            width: 90%;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: var(--primary);
+            padding: 30px;
+            color: white;
+            text-align: center;
+            position: relative;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        h1 i {
+            font-size: 30px;
+        }
+
+        .subtitle {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .card-body {
+            padding: 30px;
+        }
+
+        .input-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid var(--gray);
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        input[type="text"]::placeholder {
+            color: #aaa;
+        }
+
+        .option-group {
+            margin-bottom: 25px;
+            background-color: var(--gray-light);
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        .option-group-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .option-group-label i {
+            color: var(--primary);
+        }
+        
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+            padding: 10px;
+            border-radius: 6px;
+            background-color: white;
+        }
+        
+        .checkbox-container input[type="checkbox"] {
+            margin-right: 10px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+        
+        .checkbox-label {
+            font-size: 16px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .checkbox-label i {
+            color: var(--primary);
+            font-size: 16px;
+        }
+
+        .option-buttons {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .option-button {
+            background: white;
+            color: var(--dark);
+            border: 1px solid var(--gray);
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            flex: 1;
+            min-width: 120px;
+            transition: all 0.2s;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .option-button:hover:not(.selected):not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .option-button.selected {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .option-button:disabled {
+            background: var(--gray-light);
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .option-button i {
+            font-size: 16px;
+        }
+
+        .download-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            width: 100%;
+            padding: 15px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .download-btn:hover:not(:disabled) {
+            background: var(--primary-dark);
+        }
+
+        .download-btn:disabled {
+            background: var(--gray);
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 500;
+            font-size: 16px;
+        }
+
+        .status.loading { 
+            background: var(--secondary-light); 
+            color: var(--secondary); 
+        }
+        
+        .status.success { 
+            background: var(--success-light); 
+            color: var(--success); 
+        }
+        
+        .status.error { 
+            background: var(--error-light); 
+            color: var(--error); 
+        }
+
+        .result-container {
+            margin-top: 30px;
+            background: var(--gray-light);
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        #video-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+            word-break: break-word;
+            font-weight: 600;
+            color: #111;
+        }
+
+        .result-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: white;
+            border-radius: 6px;
+        }
+
+        .result-item-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 16px;
+        }
+
+        .result-item-info i {
+            color: var(--primary);
+            font-size: 20px;
+        }
+
+        .download-link {
+            background: var(--primary);
+            color: white;
+            text-decoration: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .download-link:hover {
+            background: var(--primary-dark);
+        }
+        
+        .hidden { 
+            display: none; 
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .language-toggle {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: white;
+            color: var(--primary);
+            border: none;
+            border-radius: 4px;
+            padding: 8px 15px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .language-toggle:hover {
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        .restart-button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            width: 100%;
+            padding: 15px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .restart-button:hover {
+            background: var(--primary-dark);
+        }
+
+        /* New styles for ready banner */
+        .ready-banner {
+            background: var(--success);
+            color: white;
+            text-align: center;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            font-size: 18px;
+            font-weight: 600;
+            animation: pulse 1.5s infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+
+        @media (max-width: 768px) {
+            .card-header, .card-body {
+                padding: 20px;
+            }
+            
+            .option-button {
+                padding: 10px 15px;
+                min-width: 100px;
+                font-size: 15px;
+            }
+            
+            h1 {
+                font-size: 26px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .option-button {
+                flex: 100%;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+
+            .language-toggle {
+                top: 10px;
+                right: 10px;
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+        }
+    </style>
+
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <h1><i class="fab fa-youtube"></i> <span data-lang="title">YouTube Subtitle Downloader</span></h1>
+                <div class="subtitle"><span data-lang="subtitle">Download subtitles from YouTube videos with ease</span></div>
+                <button id="language-toggle" class="language-toggle">
+                    <i class="fas fa-language"></i> <span data-lang="langButton">中文</span>
+                </button>
+            </div>
+            
+            <div class="card-body">
+                <div id="input-section">
+                    <div class="input-group">
+                        <label for="youtube-url"><i class="fas fa-link"></i> <span data-lang="urlLabel">YouTube URL:</span></label>
+                        <input type="text" id="youtube-url" data-lang-placeholder="urlPlaceholder" placeholder="https://www.youtube.com/watch?v=...">
+                    </div>
+                    
+                    <div class="option-group" id="subtitle-options">
+                        <div class="option-group-label">
+                            <i class="fas fa-cog"></i>
+                            <label><span data-lang="subtitleOptions">Subtitle Options:</span></label>
+                        </div>
+                        <div class="checkbox-container">
+                            <input type="checkbox" id="include-timestamps">
+                            <label for="include-timestamps" class="checkbox-label">
+                                <i class="fas fa-stopwatch"></i> <span data-lang="includeTimestamps">Include Timestamps</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="option-group" id="model-options">
+                        <div class="option-group-label">
+                            <i class="fas fa-cog"></i>
+                            <label><span data-lang="modelOptions">Transcription Model:</span></label>
+                        </div>
+                        <div class="option-buttons" id="model-buttons">
+                            <button class="option-button selected" data-model="small">
+                                <i class="fas fa-balance-scale"></i> <span data-lang="smallModel">Small (Balanced)</span>
+                            </button>
+                            <button class="option-button" data-model="medium">
+                                <i class="fas fa-check-double"></i> <span data-lang="mediumModel">Medium (Accurate)</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <button id="download-btn" class="download-btn">
+                        <i class="fas fa-download"></i> <span data-lang="downloadBtn">Start Download Subtitles</span>
+                    </button>
+                </div>
+                
+                <div id="status-message" class="status hidden"></div>
+                
+                <div id="result-container" class="result-container hidden">
+                    <h2 id="video-title"></h2>
+                    <div id="ready-banner" class="ready-banner hidden">
+                        <i class="fas fa-check-circle"></i> <span data-lang="readyBanner">Now Ready! Click below to download</span>
+                    </div>
+                    <div id="result-list" class="result-list"></div>
+                    <button id="restart-btn" class="restart-button">
+                        <i class="fas fa-redo"></i> <span data-lang="restartBtn">Process Another Video</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const youtubeUrlInput = document.getElementById('youtube-url');
+        const includeTimestampsCheckbox = document.getElementById('include-timestamps');
+        const modelButtons = document.querySelectorAll('#model-buttons .option-button');
+        const downloadBtn = document.getElementById('download-btn');
+        const statusMessage = document.getElementById('status-message');
+        const resultContainer = document.getElementById('result-container');
+        const videoTitleElement = document.getElementById('video-title');
+        const resultListElement = document.getElementById('result-list');
+        const languageToggle = document.getElementById('language-toggle');
+        const inputSection = document.getElementById('input-section');
+        const restartBtn = document.getElementById('restart-btn');
+        const readyBanner = document.getElementById('ready-banner');
+
+        let selectedModel = 'small';
+        let currentLanguage = 'en'; // 默认语言为英语
+        let currentJobId = null; // 用于跟踪当前任务
+        let pollingInterval = null; // 用于轮询转录进度
+
+        // 语言翻译
+        const translations = {
+            en: {
+                title: "YouTube Subtitle Downloader",
+                subtitle: "Download subtitles from YouTube videos with ease",
+                langButton: "中文",
+                urlLabel: "YouTube URL:",
+                urlPlaceholder: "https://www.youtube.com/watch?v=...",
+                subtitleOptions: "Subtitle Options:",
+                includeTimestamps: "Include Timestamps",
+                modelOptions: "Transcription Model:",
+                smallModel: "Small (Balanced)",
+                mediumModel: "Medium (Accurate)",
+                downloadBtn: "Start Download Subtitles",
+                processing: "Processing...",
+                enterUrl: "Please enter a YouTube URL",
+                processingRequest: "Processing your request...",
+                networkError: "Network error: ",
+                subtitleType: "Subtitles",
+                audioType: "Audio (MP3)",
+                videoType: "Video (MP4)",
+                downloadText: "Download",
+                restartBtn: "Process Another Video",
+                readyBanner: "Now Ready! Click below to download",
+                processingTime: "Processing completed in {0} seconds",
+                transcribing: "Transcribing audio... ({0}%)",
+                waiting: "Waiting for file..."
+            },
+            zh: {
+                title: "YouTube 字幕下载器",
+                subtitle: "轻松下载 YouTube 视频字幕",
+                langButton: "English",
+                urlLabel: "YouTube 链接:",
+                urlPlaceholder: "https://www.youtube.com/watch?v=...",
+                subtitleOptions: "字幕选项:",
+                includeTimestamps: "包含时间戳",
+                modelOptions: "转录模型:",
+                smallModel: "小型 (平衡)",
+                mediumModel: "中型 (精确)",
+                downloadBtn: "开始下载字幕",
+                processing: "处理中...",
+                enterUrl: "请输入 YouTube 链接",
+                processingRequest: "正在处理您的请求...",
+                networkError: "网络错误: ",
+                subtitleType: "字幕",
+                audioType: "音频 (MP3)",
+                videoType: "视频 (MP4)",
+                downloadText: "下载",
+                restartBtn: "处理另一个视频",
+                readyBanner: "准备就绪！点击下方下载",
+                processingTime: "处理完成，耗时 {0} 秒",
+                transcribing: "正在转录音频... ({0}%)",
+                waiting: "等待文件..."
+            }
+        };
+
+        // 字符串格式化辅助函数
+        function formatString(str, ...args) {
+            return str.replace(/{(\d+)}/g, (match, number) => 
+                typeof args[number] !== 'undefined' ? args[number] : match
+            );
+        }
+
+        // 更新语言文本
+        function updateLanguageText() {
+            const lang = translations[currentLanguage];
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.getAttribute('data-lang');
+                if (lang[key]) el.textContent = lang[key];
+            });
+            document.querySelectorAll('[data-lang-placeholder]').forEach(el => {
+                const key = el.getAttribute('data-lang-placeholder');
+                if (lang[key]) el.setAttribute('placeholder', lang[key]);
+            });
+            if (!resultContainer.classList.contains('hidden')) {
+                updateResultTexts();
+            }
+        }
+
+        // 更新结果区域的文本
+        function updateResultTexts() {
+            const lang = translations[currentLanguage];
+            document.querySelectorAll('.download-link span').forEach(el => {
+                el.textContent = lang.downloadText;
+            });
+            document.querySelectorAll('.result-item-info div').forEach(el => {
+                if (el.dataset.type === 'audio') el.textContent = lang.audioType;
+                else if (el.dataset.type === 'video') el.textContent = lang.videoType;
+                else if (el.dataset.type === 'subtitle') el.textContent = lang.subtitleType;
+            });
+            if (readyBanner) {
+                readyBanner.querySelector('span').textContent = lang.readyBanner;
+            }
+        }
+
+        // 语言切换
+        languageToggle.addEventListener('click', () => {
+            currentLanguage = currentLanguage === 'en' ? 'zh' : 'en';
+            updateLanguageText();
+        });
+
+        // 模型选择
+        modelButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                modelButtons.forEach(btn => btn.classList.remove('selected'));
+                button.classList.add('selected');
+                selectedModel = button.dataset.model;
+            });
+        });
+
+        // 重新开始
+        restartBtn.addEventListener('click', () => {
+            if (pollingInterval) clearInterval(pollingInterval);
+            inputSection.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            statusMessage.classList.add('hidden');
+            readyBanner.classList.add('hidden');
+            youtubeUrlInput.value = '';
+            currentJobId = null;
+        });
+
+        // 下载按钮点击事件
+        downloadBtn.addEventListener('click', async () => {
+            const youtubeUrl = youtubeUrlInput.value.trim();
+            const lang = translations[currentLanguage];
+            
+            if (!youtubeUrl) {
+                showStatus('error', `<i class="fas fa-exclamation-circle"></i> ${lang.enterUrl}`);
+                return;
+            }
+
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = `<div class="spinner"></div> ${lang.processing}`;
+            showStatus('loading', `<i class="fas fa-spinner fa-spin"></i> ${lang.processingRequest}`);
+            resultContainer.classList.add('hidden');
+            readyBanner.classList.add('hidden');
+
+            try {
+                const response = await fetch('/download_subtitle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        youtube_url: youtubeUrl,
+                        include_timestamps: includeTimestampsCheckbox.checked,
+                        model_size: selectedModel
+                    })
+                });
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    currentJobId = data.job_id;
+                    showStatus('success', `<i class="fas fa-check-circle"></i> ${data.message}`);
+                    displayResults(data);
+                    inputSection.classList.add('hidden');
+                    if (data.needs_transcription_polling) {
+                        startTranscriptionPolling(data.job_id);
+                    } else {
+                        checkDownloadStatus(data.job_id);
+                    }
+                } else {
+                    showStatus('error', `<i class="fas fa-exclamation-circle"></i> ${data.message || 'An error occurred'}`);
+                }
+            } catch (error) {
+                showStatus('error', `<i class="fas fa-exclamation-triangle"></i> ${lang.networkError}${error.message}`);
+            } finally {
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = `<i class="fas fa-download"></i> ${lang.downloadBtn}`;
+            }
+        });
+
+        // 显示状态消息
+        function showStatus(type, message) {
+            statusMessage.innerHTML = message;
+            statusMessage.className = `status ${type}`;
+            statusMessage.classList.remove('hidden');
+        }
+
+        // 显示初始结果
+        function displayResults(data) {
+            videoTitleElement.textContent = data.video_title;
+            resultListElement.innerHTML = '';
+            const lang = translations[currentLanguage];
+            const downloadItems = [];
+
+            // 字幕
+            if (data.subtitles && data.subtitles.length > 0) {
+                data.subtitles.forEach(subtitle => {
+                    if (subtitle.status === 'processing') {
+                        downloadItems.push({
+                            type: 'subtitle',
+                            icon: 'fas fa-closed-captioning',
+                            title: lang.subtitleType,
+                            status: 'processing',
+                            job_id: subtitle.job_id
+                        });
+                    } else {
+                        downloadItems.push({
+                            type: 'subtitle',
+                            icon: 'fas fa-closed-captioning',
+                            title: lang.subtitleType,
+                            path: subtitle.path,
+                            filename: subtitle.filename
+                        });
+                    }
+                });
+            }
+
+            // 音频
+            downloadItems.push({
+                type: 'audio',
+                icon: 'fas fa-music',
+                title: lang.audioType,
+                status: data.audio_ready ? 'complete' : 'pending',
+                path: data.audio ? data.audio.path : null,
+                filename: data.audio ? data.audio.filename : null
+            });
+
+            // 视频
+            downloadItems.push({
+                type: 'video',
+                icon: 'fas fa-video',
+                title: lang.videoType,
+                status: data.video_ready ? 'complete' : 'pending',
+                path: data.video ? data.video.path : null,
+                filename: data.video ? data.video.filename : null
+            });
+
+            downloadItems.forEach(item => {
+                const dataType = `data-type="${item.type}"`;
+                let actionHtml = '';
+                if (item.status === 'complete' && item.path) {
+                    actionHtml = `<a href="${item.path}" download="${item.filename}" class="download-link">
+                        <i class="fas fa-download"></i> <span>${lang.downloadText}</span>
+                    </a>`;
+                } else {
+                    actionHtml = `<span class="waiting">${lang.waiting}</span>`;
+                }
+
+                resultListElement.innerHTML += `
+                    <div class="result-item" data-job-id="${item.job_id || ''}">
+                        <div class="result-item-info">
+                            <i class="${item.icon}"></i>
+                            <div ${dataType}>${item.title}</div>
+                        </div>
+                        ${actionHtml}
+                    </div>
+                `;
+            });
+
+            resultContainer.classList.remove('hidden');
+            if (!data.needs_transcription_polling && data.video_ready && data.audio_ready) {
+                readyBanner.classList.remove('hidden');
+            }
+        }
+
+        // 轮询转录进度
+        function startTranscriptionPolling(jobId) {
+            const lang = translations[currentLanguage];
+            pollingInterval = setInterval(async () => {
+                try {
+                    const progressResponse = await fetch(`/check_transcription_progress/${jobId}`);
+                    const progressData = await progressResponse.json();
+
+                    if (progressData.status === 'complete') {
+                        clearInterval(pollingInterval);
+                        const resultResponse = await fetch(`/get_transcription_result/${jobId}`);
+                        const resultData = await resultResponse.json();
+                        if (resultData.status === 'success') {
+                            updateSubtitleResult(resultData.subtitle);
+                        }
+                        checkDownloadStatus(jobId);
+                    } else if (progressData.status === 'failed') {
+                        clearInterval(pollingInterval);
+                        showStatus('error', `<i class="fas fa-exclamation-circle"></i> Transcription failed`);
+                    } else {
+                        showStatus('loading', `<i class="fas fa-spinner fa-spin"></i> ${formatString(lang.transcribing, progressData.progress)}`);
+                    }
+                } catch (error) {
+                    clearInterval(pollingInterval);
+                    showStatus('error', `<i class="fas fa-exclamation-triangle"></i> ${lang.networkError}${error.message}`);
+                }
+            }, 5000);
+        }
+
+        // 检查下载状态
+        async function checkDownloadStatus(jobId) {
+            try {
+                const response = await fetch(`/check_download_status/${jobId}`);
+                const data = await response.json();
+                if (data.status === 'success') {
+                    updateDownloadStatus(data);
+                    if (data.video_ready && data.audio_ready && data.subtitle_status === 'complete') {
+                        readyBanner.classList.remove('hidden');
+                    }
+                }
+            } catch (error) {
+                showStatus('error', `<i class="fas fa-exclamation-triangle"></i> ${translations[currentLanguage].networkError}${error.message}`);
+            }
+        }
+
+        // 更新字幕结果
+        function updateSubtitleResult(subtitle) {
+            const lang = translations[currentLanguage];
+            const subtitleItem = resultListElement.querySelector('.result-item[data-job-id]');
+            if (subtitleItem) {
+                subtitleItem.querySelector('.waiting').outerHTML = `
+                    <a href="${subtitle.path}" download="${subtitle.filename}" class="download-link">
+                        <i class="fas fa-download"></i> <span>${lang.downloadText}</span>
+                    </a>`;
+            }
+        }
+
+        // 更新音频和视频下载状态
+        function updateDownloadStatus(data) {
+            const lang = translations[currentLanguage];
+            if (data.video && data.video_ready) {
+                const videoItem = resultListElement.querySelector('.result-item [data-type="video"]');
+                if (videoItem && videoItem.parentElement.querySelector('.waiting')) {
+                    videoItem.parentElement.querySelector('.waiting').outerHTML = `
+                        <a href="${data.video.path}" download="${data.video.filename}" class="download-link">
+                            <i class="fas fa-download"></i> <span>${lang.downloadText}</span>
+                        </a>`;
+                }
+            }
+            if (data.audio && data.audio_ready) {
+                const audioItem = resultListElement.querySelector('.result-item [data-type="audio"]');
+                if (audioItem && audioItem.parentElement.querySelector('.waiting')) {
+                    audioItem.parentElement.querySelector('.waiting').outerHTML = `
+                        <a href="${data.audio.path}" download="${data.audio.filename}" class="download-link">
+                            <i class="fas fa-download"></i> <span>${lang.downloadText}</span>
+                        </a>`;
+                }
+            }
+        }
+
+        // 初始化语言
+        updateLanguageText();
+    </script>
+</body>
+</html>
