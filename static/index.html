@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>YouTube 字幕下载器</title>
+    <title>YouTube Subtitle Downloader</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; text-align: center; }
         input[type="text"] { width: 300px; padding: 5px; }
@@ -12,22 +12,27 @@
     </style>
 </head>
 <body>
-    <h2>YouTube 字幕下载器</h2>
-    <input type="text" id="url" placeholder="输入 YouTube 视频 URL">
-    <button onclick="download()">下载字幕</button>
+    <h2>YouTube Subtitle Downloader</h2>
+    <input type="text" id="url" placeholder="Enter YouTube Video URL">
+    <button onclick="download()"> Start Download Subtitles</button>
+    <button id="download-btn" style="display: none;" onclick="downloadTranscript()">Save as File</button>
     <div id="output"></div>
-    <div id="transcript"></div>
+    <div id="transcript">
+        <div id="transcript-content"></div>
+    </div>
 
     <script>
         function download() {
             const url = document.getElementById('url').value;
             if (!url) {
-                alert('请输入 YouTube 视频 URL！');
+                alert('Please enter a YouTube video URL!');
                 return;
             }
 
-            document.getElementById('output').innerHTML = '正在下载...';
-            document.getElementById('transcript').innerHTML = '';
+            document.getElementById('output').innerHTML = 'Downloading...';
+            document.getElementById('transcript-content').innerHTML = '';
+            document.getElementById('download-btn').style.display = 'none'; // Hide button until subtitles are available
+
             fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -36,23 +41,37 @@
             .then(response => response.json())
             .then(data => {
                 const output = document.getElementById('output');
-                const transcriptDiv = document.getElementById('transcript');
+                const transcriptDiv = document.getElementById('transcript-content');
                 if (data.status === 'success') {
-                    output.innerHTML = `<strong>${data.message}</strong><br>下载文件：<ul>`;
+                    output.innerHTML = `<strong>${data.message}</strong><ul>`;
                     data.files.forEach(file => {
                         output.innerHTML += `<li>${file}</li>`;
                     });
                     output.innerHTML += '</ul>';
                     if (data.transcript) {
-                        transcriptDiv.innerHTML = `<strong>字幕内容：</strong><br>${data.transcript}`;
+                        transcriptDiv.innerHTML = `<strong>Subtitle Content:</strong><br>${data.transcript}`;
+                        document.getElementById('download-btn').style.display = 'inline'; // Show save button
                     }
                 } else {
-                    output.innerHTML = `<strong>错误：</strong> ${data.message}`;
+                    output.innerHTML = `<strong>Error:</strong> ${data.message}`;
                 }
             })
             .catch(error => {
-                document.getElementById('output').innerHTML = `请求失败: ${error}`;
+                document.getElementById('output').innerHTML = `Request Failed: ${error}`;
             });
+        }
+
+        function downloadTranscript() {
+            const transcriptText = document.getElementById('transcript-content').innerText.replace('Subtitle Content:\n', '');
+            const blob = new Blob([transcriptText], { type: 'text/plain;charset=utf-8' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'transcript.txt'; // Default file name
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
         }
     </script>
 </body>
