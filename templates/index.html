@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Subtitle Downloader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>YouTube Subtitle Downloader</h1>
+            <p class="subtitle">Download subtitles or generate transcripts from YouTube videos</p>
+        </header>
+        
+        <div class="input-group">
+            <input type="text" id="url" placeholder="Enter YouTube Video URL" 
+                   aria-label="YouTube Video URL">
+        </div>
+        
+        <div class="model-selector">
+            <label for="model-select">Whisper Model:</label>
+            <select id="model-select">
+                <option value="small">Small (Faster)</option>
+                <option value="medium">Medium (More Accurate)</option>
+            </select>
+            
+            <div class="checkbox-container">
+                <input type="checkbox" id="add-timestamps" checked>
+                <label for="add-timestamps">Add Timestamps</label>
+            </div>
+        </div>
+        
+        <div class="action-buttons">
+            <button id="download-btn" onclick="download()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Download Subtitles
+            </button>
+        </div>
+        
+        <div id="status-indicator" class="status-indicator">
+            <div id="loading-spinner" class="loading-spinner"></div>
+            <span id="status-message">Processing...</span>
+        </div>
+        
+        <div id="result-container" class="result-container">
+            <h3>Download Results:</h3>
+            <div id="output-message"></div>
+            
+            <ul id="file-list" class="file-list"></ul>
+        </div>
+        
+        <div id="transcript-container" class="transcript-container">
+            <div class="transcript-toolbar">
+                <h3>Transcript Content</h3>
+                <div>
+                    <button id="copy-btn" class="copy-btn" onclick="copyTranscript()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        Copy
+                    </button>
+                    <button id="save-btn" class="save-btn" onclick="downloadTranscript()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Save as File
+                    </button>
+                </div>
+            </div>
+            
+            <div class="format-controls">
+                <div class="timestamp-toggle">
+                    <input type="checkbox" id="toggle-timestamps" checked onchange="toggleTimestamps()">
+                    <label for="toggle-timestamps">Show Timestamps</label>
+                </div>
+            </div>
+            
+            <div id="transcript-content" class="transcript-content"></div>
+        </div>
+        
+        <footer>
+            <p>This tool uses Python, Flask, yt-dlp, and Whisper to download and generate subtitles.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize elements
+        const statusIndicator = document.getElementById('status-indicator');
+        const resultContainer = document.getElementById('result-container');
+        const transcriptContainer = document.getElementById('transcript-container');
+        const outputMessage = document.getElementById('output-message');
+        const fileList = document.getElementById('file-list');
+        const transcriptContent = document.getElementById('transcript-content');
+        const downloadBtn = document.getElementById('download-btn');
+        const modelSelect = document.getElementById('model-select');
+        const addTimestampsCheckbox = document.getElementById('add-timestamps');
+        
+        // Store original transcript for formatting
+        let originalTranscript = '';
+        let processedTranscriptLines = [];
+        
+        // Allow Enter key to trigger download
+        document.getElementById('url').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                download();
+            }
+        });
+        
+        function setStatus(message, type) {
+            statusIndicator.className = 'status-indicator';
+            statusIndicator.classList.add(`status-${type}`);
+            document.getElementById('status-message').textContent = message;
+            statusIndicator.style.display = 'block';
+            
+            // For loading status, show spinner
+            if (type === 'loading') {
+                document.getElementById('loading-spinner').style.display = 'block';
+            } else {
+                document.getElementById('loading-spinner').style.display = 'none';
+            }
+        }
+        
+        function resetUI() {
+            resultContainer.style.display = 'none';
+            transcriptContainer.style.display = 'none';
+            fileList.innerHTML = '';
+            transcriptContent.innerHTML = '';
+            statusIndicator.style.display = 'none';
+            originalTranscript = '';
+            processedTranscriptLines = [];
+        }
+        
+        function download() {
+            const url = document.getElementById('url').value.trim();
+            const selectedModel = modelSelect.value;
+            const addTimestamps = addTimestampsCheckbox.checked;
+            
+            if (!url) {
+                setStatus('Please enter a YouTube video URL!', 'error');
+                return;
+            }
+            
+            // Validate YouTube URL
+            if (!isValidYouTubeUrl(url)) {
+                setStatus('Please enter a valid YouTube URL', 'error');
+                return;
+            }
+            
+            // Reset UI and show loading status
+            resetUI();
+            setStatus('Downloading and processing subtitles... This may take a few minutes for longer videos.', 'loading');
+            
+            // Disable download button
+            downloadBtn.disabled = true;
+            
+            // Send request to backend
+            fetch('/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `url=${encodeURIComponent(url)}&model=${encodeURIComponent(selectedModel)}`
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Re-enable download button
+                downloadBtn.disabled = false;
+                
+                if (data.status === 'success') {
+                    setStatus('Success!', 'success');
+                    resultContainer.style.display = 'block';
+                    outputMessage.textContent = data.message;
+                    
+                    // Display file list if available
+                    if (data.files && data.files.length > 0) {
+                        fileList.innerHTML = data.files.map(file => 
+                            `<li>
+                                <span>${file}</span>
+                                <a href="/static/${file}" download class="download-link">Download</a>
+                             </li>`
+                        ).join('');
+                    }
+                    
+                    // Display transcript if available
+                    if (data.transcript) {
+                        originalTranscript = data.transcript;
+                        transcriptContainer.style.display = 'block';
+                        
+                        // Process transcript with or without timestamps
+                        processTranscript(data.transcript, addTimestamps);
+                    }
+                } else {
+                    setStatus(`Error: ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                downloadBtn.disabled = false;
+                setStatus(`Request failed: ${error.message}`, 'error');
+            });
+        }
+        
+        function processTranscript(transcript, addTimestamps) {
+            // Clear existing content
+            transcriptContent.innerHTML = '';
+            processedTranscriptLines = [];
+            
+            // Process transcript text
+            const lines = transcript.split(/\n+/);
+            let currentTime = 0;
+            
+            lines.forEach((line, index) => {
+                if (line.trim() === '') return;
+                
+                // Calculate a fake timestamp based on line length and position
+                // This is a basic estimation since we don't have real timestamps
+                const timePerChar = 0.05; // 50ms per character as a rough estimate
+                const duration = line.length * timePerChar;
+                
+                const hours = Math.floor(currentTime / 3600);
+                const minutes = Math.floor((currentTime % 3600) / 60);
+                const seconds = Math.floor(currentTime % 60);
+                const timestamp = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                
+                // Store processed line
+                processedTranscriptLines.push({
+                    text: line,
+                    timestamp: timestamp
+                });
+                
+                // Increment time for next line
+                currentTime += duration + 1; // Add 1 second between lines
+            });
+            
+            // Display with proper formatting
+            displayTranscript(document.getElementById('toggle-timestamps').checked);
+        }
+        
+        function displayTranscript(showTimestamps) {
+            transcriptContent.innerHTML = '';
+            
+            processedTranscriptLines.forEach(line => {
+                const lineElement = document.createElement('div');
+                lineElement.className = 'transcript-line';
+                
+                if (showTimestamps) {
+                    const timestampSpan = document.createElement('span');
+                    timestampSpan.className = 'timestamp';
+                    timestampSpan.textContent = line.timestamp;
+                    lineElement.appendChild(timestampSpan);
+                }
+                
+                const textSpan = document.createElement('span');
+                textSpan.className = 'transcript-text';
+                textSpan.textContent = line.text;
+                lineElement.appendChild(textSpan);
+                
+                transcriptContent.appendChild(lineElement);
+            });
+        }
+        
+        function toggleTimestamps() {
+            const showTimestamps = document.getElementById('toggle-timestamps').checked;
+            displayTranscript(showTimestamps);
+        }
+        
+        function copyTranscript() {
+            // Determine if we should include timestamps in the copy
+            const includeTimestamps = document.getElementById('toggle-timestamps').checked;
+            
+            let textToCopy;
+            if (includeTimestamps) {
+                textToCopy = processedTranscriptLines.map(line => 
+                    `${line.timestamp} ${line.text}`
+                ).join('\n');
+            } else {
+                textToCopy = processedTranscriptLines.map(line => line.text).join('\n');
+            }
+            
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const copyBtn = document.getElementById('copy-btn');
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!';
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                }, 2000);
+            });
+        }
+        
+        function downloadTranscript() {
+            // Determine if we should include timestamps in the download
+            const includeTimestamps = document.getElementById('toggle-timestamps').checked;
+            
+            let textToDownload;
+            if (includeTimestamps) {
+                textToDownload = processedTranscriptLines.map(line => 
+                    `${line.timestamp} ${line.text}`
+                ).join('\n');
+            } else {
+                textToDownload = processedTranscriptLines.map(line => line.text).join('\n');
+            }
+            
+            const videoId = extractVideoId(document.getElementById('url').value);
+            const fileName = videoId ? `transcript_${videoId}.txt` : 'transcript.txt';
+            
+            const blob = new Blob([textToDownload], { type: 'text/plain;charset=utf-8' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            // Animation feedback
+            const saveBtn = document.getElementById('save-btn');
+            const originalText = saveBtn.innerHTML;
+            saveBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Saved!';
+            setTimeout(() => {
+                saveBtn.innerHTML = originalText;
+            }, 2000);
+        }
+        
+        function isValidYouTubeUrl(url) {
+            // This regex checks for common YouTube URL patterns
+            const regex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/;
+            return regex.test(url);
+        }
+        
+        function extractVideoId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+    </script>
+</body>
+</html>
