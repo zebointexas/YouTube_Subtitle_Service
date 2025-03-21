@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>YouTube 字幕下载器</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; text-align: center; }
+        input[type="text"] { width: 300px; padding: 5px; }
+        button { padding: 5px 10px; margin: 10px; }
+        #output, #transcript { margin-top: 20px; text-align: left; max-width: 600px; margin: 20px auto; }
+        #transcript { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h2>YouTube 字幕下载器</h2>
+    <input type="text" id="url" placeholder="输入 YouTube 视频 URL">
+    <button onclick="download()">下载字幕</button>
+    <div id="output"></div>
+    <div id="transcript"></div>
+
+    <script>
+        function download() {
+            const url = document.getElementById('url').value;
+            if (!url) {
+                alert('请输入 YouTube 视频 URL！');
+                return;
+            }
+
+            document.getElementById('output').innerHTML = '正在下载...';
+            document.getElementById('transcript').innerHTML = '';
+            fetch('/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `url=${encodeURIComponent(url)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                const output = document.getElementById('output');
+                const transcriptDiv = document.getElementById('transcript');
+                if (data.status === 'success') {
+                    output.innerHTML = `<strong>${data.message}</strong><br>下载文件：<ul>`;
+                    data.files.forEach(file => {
+                        output.innerHTML += `<li>${file}</li>`;
+                    });
+                    output.innerHTML += '</ul>';
+                    if (data.transcript) {
+                        transcriptDiv.innerHTML = `<strong>字幕内容：</strong><br>${data.transcript}`;
+                    }
+                } else {
+                    output.innerHTML = `<strong>错误：</strong> ${data.message}`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('output').innerHTML = `请求失败: ${error}`;
+            });
+        }
+    </script>
+</body>
+</html>
