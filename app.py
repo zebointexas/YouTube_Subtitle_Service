@@ -29,50 +29,50 @@ def download_subtitles():
     try:
         video_url = request.form['url']
         model_name = request.form.get('model', SELECTED_MODEL)
+        force_transcribe = request.form.get('force_transcribe', 'false').lower() == 'true'
         SELECTED_MODEL = model_name
         
         result = {'status': 'success', 'files': [], 'message': '', 'transcript': ''}
 
-        # Step 1: Try fetching from YouTube's "Show transcript"
-        logging.info(f"Checking 'Show transcript' for {video_url}")
-        transcript = fetch_youtube_transcript(video_url)
-        if transcript:
-            result['transcript'] = transcript
-            result['message'] = 'Subtitles successfully fetched from YouTube "Show transcript"!'
-            logging.info("Found 'Show transcript' subtitles")
-            return jsonify(result)
-
-        # Step 2: Try downloading subtitle files with yt-dlp
-        logging.info("Attempting to download subtitle files with yt-dlp")
-        output_file = os.path.join(app.static_folder, "subtitles")
-        command = ["yt-dlp", "--write-sub", "--skip-download", "-o", output_file, video_url]
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()
-
-        # Check for subtitle files in the static directory
-        for file in os.listdir(app.static_folder):
-            if file.startswith("subtitles") and (file.endswith(".srt") or file.endswith(".vtt")):
-                result['files'].append(file)
-
-        if result['files']:
-            result['message'] = 'Subtitle files downloaded successfully!'
-            logging.info("Subtitle files downloaded successfully")
-        else:
-            # Step 3: Generate subtitles from audio using Whisper
-            logging.info("No subtitles found, generating from audio")
-            transcript = generate_subtitles_from_audio(video_url, model_name)
+        # Step 1: Try fetching from YouTube's "Show transcript" (unless force_transcribe is True)
+        if not force_transcribe:
+            logging.info(f"Checking 'Show transcript' for {video_url}")
+            transcript = fetch_youtube_transcript(video_url)
             if transcript:
                 result['transcript'] = transcript
-                result['message'] = f'Subtitles generated from audio successfully using Whisper ({model_name})!'
-                logging.info("Subtitles generated successfully")
-            else:
-                result['status'] = 'error'
-                result['message'] = 'No subtitles available and failed to generate from audio.'
-                logging.error("Failed to generate subtitles")
+                result['message'] = 'Subtitles successfully fetched from YouTube "Show transcript"!'
+                logging.info("Found 'Show transcript' subtitles")
+                return jsonify(result)
 
-        if stderr:
-            result['message'] += f"\nError message: {stderr}"
-            logging.warning(f"yt-dlp stderr: {stderr}")
+        # Step 2: Try downloading subtitle files with yt-dlp (unless force_transcribe is True)
+        if not force_transcribe:
+            logging.info("Attempting to download subtitle files with yt-dlp")
+            output_file = os.path.join(app.static_folder, "subtitles")
+            command = ["yt-dlp", "--write-sub", "--skip-download", "-o", output_file, video_url]
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+
+            # Check for subtitle files in the static directory
+            for file in os.listdir(app.static_folder):
+                if file.startswith("subtitles") and (file.endswith(".srt") or file.endswith(".vtt")):
+                    result['files'].append(file)
+
+            if result['files']:
+                result['message'] = 'Subtitle files downloaded successfully!'
+                logging.info("Subtitle files downloaded successfully")
+                return jsonify(result)
+
+        # Step 3: Generate subtitles from audio using Whisper
+        logging.info(f"{'Forced transcription requested' if force_transcribe else 'No subtitles found'}, generating from audio")
+        transcript = generate_subtitles_from_audio(video_url, model_name)
+        if transcript:
+            result['transcript'] = transcript
+            result['message'] = f'Subtitles generated from audio successfully using Whisper ({model_name})!'
+            logging.info("Subtitles generated successfully")
+        else:
+            result['status'] = 'error'
+            result['message'] = 'Failed to generate subtitles from audio.'
+            logging.error("Failed to generate subtitles")
 
         # Clean up temporary files
         for file in os.listdir("."):
@@ -85,7 +85,7 @@ def download_subtitles():
     except Exception as e:
         logging.error(f"Download failed: {str(e)}")
         return jsonify({'status': 'error', 'message': f'Download failed: {str(e)}'})
-
+    
 def fetch_youtube_transcript(video_url):
     """Fetch subtitles from YouTube's 'Show transcript'"""
     try:

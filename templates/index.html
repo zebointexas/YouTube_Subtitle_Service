@@ -40,6 +40,12 @@
                 </svg>
                 Download Subtitles
             </button>
+            <button id="force-transcribe-btn" class="force-transcribe-btn" onclick="forceTranscribe()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 8l-5-5-5 5M12 3v12"></path>
+                </svg>
+                Generate New Transcription
+            </button>
         </div>
         
         <div id="status-indicator" class="status-indicator">
@@ -102,10 +108,12 @@
         const downloadBtn = document.getElementById('download-btn');
         const modelSelect = document.getElementById('model-select');
         const addTimestampsCheckbox = document.getElementById('add-timestamps');
+        const forceTranscribeBtn = document.getElementById('force-transcribe-btn');
         
         // Store original transcript for formatting
         let originalTranscript = '';
         let processedTranscriptLines = [];
+        let isTranscriptMeaningful = true; // Flag to track if transcript seems meaningful
         
         // Allow Enter key to trigger download
         document.getElementById('url').addEventListener('keypress', function(event) {
@@ -161,6 +169,7 @@
             
             // Disable download button
             downloadBtn.disabled = true;
+            forceTranscribeBtn.disabled = true;
             
             // Send request to backend
             fetch('/download', {
@@ -177,6 +186,7 @@
             .then(data => {
                 // Re-enable download button
                 downloadBtn.disabled = false;
+                forceTranscribeBtn.disabled = false;
                 
                 if (data.status === 'success') {
                     setStatus('Success!', 'success');
@@ -198,6 +208,22 @@
                         originalTranscript = data.transcript;
                         transcriptContainer.style.display = 'block';
                         
+                        // Check if transcript seems meaningful
+                        isTranscriptMeaningful = checkTranscriptQuality(data.transcript);
+                        
+                        // Show recommendation to use force transcribe if transcript seems poor quality
+                        if (!isTranscriptMeaningful) {
+                            const warningElement = document.createElement('div');
+                            warningElement.className = 'transcript-warning';
+                            warningElement.innerHTML = `
+                                <p style="color: #e74c3c; background-color: #ffeaea; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                                    ⚠️ This transcript may not be of good quality. Consider using the 
+                                    <strong>"Generate New Transcription"</strong> button to create a better transcript using Whisper.
+                                </p>
+                            `;
+                            resultContainer.appendChild(warningElement);
+                        }
+                        
                         // Process transcript with or without timestamps
                         processTranscript(data.transcript, addTimestamps);
                     }
@@ -207,8 +233,32 @@
             })
             .catch(error => {
                 downloadBtn.disabled = false;
+                forceTranscribeBtn.disabled = false;
                 setStatus(`Request failed: ${error.message}`, 'error');
             });
+        }
+        
+        function checkTranscriptQuality(transcript) {
+            // Simple heuristics to detect poor quality transcripts
+            // 1. Check if transcript is very short compared to what we'd expect
+            if (transcript.length < 100 && transcript.split(/\s+/).length < 20) {
+                return false;
+            }
+            
+            // 2. Check for repeated patterns or unusual characters that might indicate auto-generated captions
+            const repeatedPatterns = transcript.match(/(\[.*?\]|\(.*?\))\s*\1\s*\1/g);
+            if (repeatedPatterns && repeatedPatterns.length > 2) {
+                return false;
+            }
+            
+            // 3. Check for high percentage of non-alphanumeric characters
+            const nonAlphaNumericCount = (transcript.match(/[^a-zA-Z0-9\s]/g) || []).length;
+            const totalLength = transcript.length;
+            if (totalLength > 0 && (nonAlphaNumericCount / totalLength) > 0.3) {
+                return false;
+            }
+            
+            return true;
         }
         
         function processTranscript(transcript, addTimestamps) {
@@ -343,6 +393,70 @@
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
             const match = url.match(regExp);
             return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        function forceTranscribe() {
+            const url = document.getElementById('url').value.trim();
+            const selectedModel = modelSelect.value;
+            
+            if (!url) {
+                setStatus('Please enter a YouTube video URL!', 'error');
+                return;
+            }
+            
+            // Validate YouTube URL
+            if (!isValidYouTubeUrl(url)) {
+                setStatus('Please enter a valid YouTube URL', 'error');
+                return;
+            }
+            
+            // Reset UI and show loading status
+            resetUI();
+            setStatus('Generating new transcription... This may take several minutes for longer videos.', 'loading');
+            
+            // Disable download buttons
+            downloadBtn.disabled = true;
+            forceTranscribeBtn.disabled = true;
+            
+            // Send request to backend with force_transcribe parameter
+            fetch('/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `url=${encodeURIComponent(url)}&model=${encodeURIComponent(selectedModel)}&force_transcribe=true`
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Re-enable download buttons
+                downloadBtn.disabled = false;
+                forceTranscribeBtn.disabled = false;
+                
+                if (data.status === 'success') {
+                    setStatus('Success!', 'success');
+                    resultContainer.style.display = 'block';
+                    outputMessage.textContent = data.message;
+                    
+                    // Display transcript if available
+                    if (data.transcript) {
+                        originalTranscript = data.transcript;
+                        transcriptContainer.style.display = 'block';
+                        
+                        // Process transcript with timestamps
+                        processTranscript(data.transcript, addTimestampsCheckbox.checked);
+                    }
+                } else {
+                    setStatus(`Error: ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                downloadBtn.disabled = false;
+                forceTranscribeBtn.disabled = false;
+                setStatus(`Request failed: ${error.message}`, 'error');
+            });
         }
     </script>
 </body>
