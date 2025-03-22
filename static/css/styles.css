@@ -258,3 +258,61 @@ footer {
 .language-selector {
     display: none;
 }
+
+
+
+/* 更新质量选择按钮样式 */
+.quality-button {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border: 2px solid #e0e0e0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+    background-color: #f5f5f5;
+    color: #666;
+}
+
+.quality-button:hover {
+    background-color: #eaeaea;
+}
+
+.quality-button.selected {
+    border-color: #888;
+    background-color: #e8e8e8;
+    font-weight: bold;
+    color: #444;
+}
+
+/* 更新生成按钮样式 */
+#generate-btn {
+    background-color: #777;
+    color: white;
+}
+
+#generate-btn:hover {
+    background-color: #666;
+}
+
+/* 更新生成面板整体样式 */
+#generation-panel {
+    background-color: #f9f9f9;
+    border: 1px solid #e0e0e0;
+}
+
+#generation-panel h3 {
+    color: #555;
+}
+
+#generation-panel .info-text {
+    color: #777;
+}
+
+/* 调整通知区域样式 */
+.transcript-notice {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f5f5f5;
+    border-left: 4px solid #999;
+}

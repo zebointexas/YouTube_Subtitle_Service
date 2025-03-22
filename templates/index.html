@@ -19,6 +19,26 @@
                        aria-label="YouTube Video URL">
             </div>
             
+            <div class="language-selector">
+                <label for="language-select">Language:</label>
+                <select id="language-select">
+                    <option value="auto" selected>Auto Detect</option>
+                    <!-- More options will be populated via JavaScript -->
+                </select>
+            </div>
+            
+            <div class="action-buttons">
+                <button id="download-btn" class="primary-button">
+                    Download Existing Transcript
+                </button>
+            </div>
+        </div>
+        
+        <!-- Generation options panel (initially hidden) -->
+        <div id="generation-panel" class="card" style="display: none; margin-top: 15px;">
+            <h3>Generate New Transcript</h3>
+            <p class="info-text">No existing transcript found or want a better one? Generate a new transcript with our AI.</p>
+            
             <div class="quality-selector">
                 <div class="quality-buttons">
                     <div class="quality-button selected" data-model="small" id="standard-quality">
@@ -30,18 +50,7 @@
                 </div>
             </div>
             
-            <div class="language-selector">
-                <label for="language-select">Language:</label>
-                <select id="language-select">
-                    <option value="auto" selected>Auto Detect</option>
-                    <!-- More options will be populated via JavaScript -->
-                </select>
-            </div>
-            
-            <div class="action-buttons">
-                <button id="download-btn">
-                    Download Existing Transcript
-                </button>
+            <div class="action-buttons" style="margin-top: 15px;">
                 <button id="generate-btn">
                     Generate New Transcript
                 </button>
@@ -58,13 +67,6 @@
             <div id="output-message"></div>
             
             <ul id="file-list" class="file-list"></ul>
-            
-            <div id="transcript-notice" class="transcript-notice" style="display: none;">
-                <p>
-                    If you're not satisfied with the existing transcript, use 
-                    <strong>"Generate New Transcript"</strong> for higher-quality results.
-                </p>
-            </div>
         </div>
         
         <div id="transcript-container" class="transcript-container">
@@ -101,19 +103,16 @@
         const transcriptContent = document.getElementById('transcript-content');
         const downloadBtn = document.getElementById('download-btn');
         const generateBtn = document.getElementById('generate-btn');
-        const transcriptNotice = document.getElementById('transcript-notice');
+        const generationPanel = document.getElementById('generation-panel');
         const standardQualityBtn = document.getElementById('standard-quality');
         const premiumQualityBtn = document.getElementById('premium-quality');
         const languageSelect = document.getElementById('language-select');
         
         let originalTranscript = '';
-        let isGenerated = false;
+        let lastVideoUrl = '';
         
         // Load available languages from backend
         fetchLanguages();
-        
-        // Set default selection
-        standardQualityBtn.classList.add('selected');
         
         // Event listeners for quality selection
         standardQualityBtn.addEventListener('click', function() {
@@ -203,12 +202,11 @@
         function resetUI() {
             resultContainer.style.display = 'none';
             transcriptContainer.style.display = 'none';
+            generationPanel.style.display = 'none';
             fileList.innerHTML = '';
             transcriptContent.innerHTML = '';
             statusIndicator.style.display = 'none';
-            transcriptNotice.style.display = 'none';
             originalTranscript = '';
-            isGenerated = false;
         }
         
         function isValidYouTubeUrl(url) {
@@ -222,7 +220,6 @@
             return (match && match[2].length === 11) ? match[2] : null;
         }
         
-
         function processRequest(generateNew) {
             const url = document.getElementById('url').value.trim();
             
@@ -236,11 +233,17 @@
                 return;
             }
             
-            // Reset UI completely
-            resetUI();
+            // Reset UI components but not the generation panel
+            // Only hide the results and transcript
+            resultContainer.style.display = 'none';
+            transcriptContainer.style.display = 'none';
+            fileList.innerHTML = '';
+            transcriptContent.innerHTML = '';
+            statusIndicator.style.display = 'none';
+            originalTranscript = '';
             
-            // Explicitly set the isGenerated flag
-            isGenerated = generateNew;
+            // Save current URL for reference
+            lastVideoUrl = url;
             
             if (generateNew) {
                 const qualityLevel = selectedModel === 'medium' ? 'premium' : 'standard';
@@ -279,14 +282,16 @@
         }
 
         function processResponse(response, wasGenerateRequest) {
-            // 启用按钮
+            // Enable buttons
             downloadBtn.disabled = false;
             generateBtn.disabled = false;
             
             if (response.status === 'success') {
-                // 根据请求类型设置不同的成功消息
+                // Set success message based on request type
                 if (wasGenerateRequest) {
                     setStatus('Successfully generated new transcript!', 'success');
+                    // Hide generation panel after successful generation
+                    generationPanel.style.display = 'none';
                 } else {
                     setStatus('Successfully downloaded existing transcript!', 'success');
                 }
@@ -309,19 +314,38 @@
                     originalTranscript = response.transcript;
                     transcriptContainer.style.display = 'block';
                     
-                    // 只有在非生成模式下才显示提示
-                    if (!wasGenerateRequest && (response.source === 'youtube' || response.source === 'subtitles')) {
-                        transcriptNotice.style.display = 'block';
-                    } else {
-                        transcriptNotice.style.display = 'none';
+                    // Always show the generation panel after successful download
+                    // Only if this wasn't already a generation request
+                    if (!wasGenerateRequest) {
+                        generationPanel.style.display = 'block';
+                        
+                        // 更新 info-text 提示信息
+                        document.querySelector('#generation-panel .info-text').innerHTML = `
+                            <div class="transcript-notice">
+                                <h3>Not satisfied with the existing transcript? Generate a new one with our AI.</h3>
+                                <p class="info">
+                                    If you think the current transcript is good enough, there's no need to generate a new one.                            
+                                </p>
+                                <p class="warning">
+                                    ⚠️ <strong>Important Notice:</strong> Generating a new transcript may take 
+                                    <strong>10 to 100 minutes</strong>, or even longer, depending on the length and complexity of the audio. 
+                                    Please be patient while the process runs.
+                                </p>
+                                <p class="refresh-warning">
+                                    🔄 <strong>Do not refresh the page!</strong> If you refresh or leave the page, the transcription process 
+                                    will restart from the beginning.
+                                </p>
+                            </div>
+                        `;
                     }
+
                     
-                    // 清空之前的内容
+                    // Clear previous content
                     transcriptContent.innerHTML = '';
                     
-                    // 处理带时间戳的字幕格式
+                    // Handle timestamped subtitle format
                     if (response.source === 'generated') {
-                        // 为生成的带时间戳的字幕创建更好的显示
+                        // Create better display for generated timestamped subtitles
                         const lines = response.transcript.split('\n');
                         
                         lines.forEach(line => {
@@ -330,36 +354,36 @@
                             const lineElement = document.createElement('div');
                             lineElement.className = 'transcript-line';
                             
-                            // 检查行是否包含时间戳格式 [00:00:00 --> 00:00:00]
+                            // Check if line contains timestamp format [00:00:00 --> 00:00:00]
                             const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2}) --> (\d{2}:\d{2}:\d{2})\]/);
                             
                             if (timestampMatch) {
-                                // 分离时间戳和文本
+                                // Separate timestamp and text
                                 const timestamp = timestampMatch[0];
                                 const text = line.substring(timestamp.length).trim();
                                 
-                                // 创建时间戳元素
+                                // Create timestamp element
                                 const timestampElement = document.createElement('span');
                                 timestampElement.className = 'timestamp';
                                 timestampElement.textContent = timestamp;
                                 
-                                // 创建文本元素
+                                // Create text element
                                 const textElement = document.createElement('span');
                                 textElement.className = 'line-text';
                                 textElement.textContent = text;
                                 
-                                // 添加到行元素
+                                // Add to line element
                                 lineElement.appendChild(timestampElement);
                                 lineElement.appendChild(textElement);
                             } else {
-                                // 对于没有识别出时间戳格式的行，直接显示
+                                // For lines without recognized timestamp format, display directly
                                 lineElement.textContent = line.trim();
                             }
                             
                             transcriptContent.appendChild(lineElement);
                         });
                     } else {
-                        // 对于非生成的字幕，保持现有的段落逻辑
+                        // For non-generated subtitles, maintain existing paragraph logic
                         const paragraphs = response.transcript.split(/\n\s*\n/);
                         
                         paragraphs.forEach(paragraph => {
@@ -374,13 +398,20 @@
                 }
             } else if (response.status === 'not_found') {
                 setStatus(response.message, 'error');
+                
+                // Show generation panel if transcript not found
+                generationPanel.style.display = 'block';
+                document.querySelector('#generation-panel .info-text').textContent = 
+                    'No existing transcript found. Generate a new transcript with our AI.';
             } else {
                 setStatus(`Error: ${response.message}`, 'error');
+                
+                // Show generation panel on other errors too
+                generationPanel.style.display = 'block';
+                document.querySelector('#generation-panel .info-text').textContent = 
+                    'Error fetching transcript. Try generating a new one instead.';
             }
         }
-
-
-
 
         function copyTranscript() {
             navigator.clipboard.writeText(originalTranscript).then(() => {
@@ -394,7 +425,7 @@
         }
         
         function downloadTranscript() {
-            const videoId = extractVideoId(document.getElementById('url').value);
+            const videoId = extractVideoId(lastVideoUrl);
             const fileName = videoId ? `transcript_${videoId}.txt` : 'transcript.txt';
             
             const blob = new Blob([originalTranscript], { type: 'text/plain' });
