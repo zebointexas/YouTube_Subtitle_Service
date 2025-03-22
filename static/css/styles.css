@@ -224,3 +224,37 @@ footer {
 .download-link:hover {
     background-color: #b00;
 }
+
+.timestamp {
+    color: #777;
+    font-size: 0.85em;
+    margin-right: 10px;
+    white-space: nowrap;
+    font-family: monospace;
+}
+
+.line-text {
+    flex: 1;
+}
+
+.transcript-line {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: flex-start;
+}
+
+/* 针对移动设备的响应式布局 */
+@media (max-width: 768px) {
+    .transcript-line {
+        flex-direction: column;
+    }
+    
+    .timestamp {
+        margin-bottom: 2px;
+        margin-right: 0;
+    }
+}
+
+.language-selector {
+    display: none;
+}

@@ -278,7 +278,6 @@
             });
         }
 
-        // 修改processResponse函数以接收generateNew参数
         function processResponse(response, wasGenerateRequest) {
             // 启用按钮
             downloadBtn.disabled = false;
@@ -317,18 +316,61 @@
                         transcriptNotice.style.display = 'none';
                     }
                     
-                    // 处理transcript
+                    // 清空之前的内容
                     transcriptContent.innerHTML = '';
-                    const paragraphs = response.transcript.split(/\n\s*\n/);
                     
-                    paragraphs.forEach(paragraph => {
-                        if (paragraph.trim() === '') return;
+                    // 处理带时间戳的字幕格式
+                    if (response.source === 'generated') {
+                        // 为生成的带时间戳的字幕创建更好的显示
+                        const lines = response.transcript.split('\n');
                         
-                        const paragraphElement = document.createElement('div');
-                        paragraphElement.className = 'transcript-line';
-                        paragraphElement.textContent = paragraph.trim();
-                        transcriptContent.appendChild(paragraphElement);
-                    });
+                        lines.forEach(line => {
+                            if (line.trim() === '') return;
+                            
+                            const lineElement = document.createElement('div');
+                            lineElement.className = 'transcript-line';
+                            
+                            // 检查行是否包含时间戳格式 [00:00:00 --> 00:00:00]
+                            const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2}) --> (\d{2}:\d{2}:\d{2})\]/);
+                            
+                            if (timestampMatch) {
+                                // 分离时间戳和文本
+                                const timestamp = timestampMatch[0];
+                                const text = line.substring(timestamp.length).trim();
+                                
+                                // 创建时间戳元素
+                                const timestampElement = document.createElement('span');
+                                timestampElement.className = 'timestamp';
+                                timestampElement.textContent = timestamp;
+                                
+                                // 创建文本元素
+                                const textElement = document.createElement('span');
+                                textElement.className = 'line-text';
+                                textElement.textContent = text;
+                                
+                                // 添加到行元素
+                                lineElement.appendChild(timestampElement);
+                                lineElement.appendChild(textElement);
+                            } else {
+                                // 对于没有识别出时间戳格式的行，直接显示
+                                lineElement.textContent = line.trim();
+                            }
+                            
+                            transcriptContent.appendChild(lineElement);
+                        });
+                    } else {
+                        // 对于非生成的字幕，保持现有的段落逻辑
+                        const paragraphs = response.transcript.split(/\n\s*\n/);
+                        
+                        paragraphs.forEach(paragraph => {
+                            if (paragraph.trim() === '') return;
+                            
+                            const paragraphElement = document.createElement('div');
+                            paragraphElement.className = 'transcript-line';
+                            paragraphElement.textContent = paragraph.trim();
+                            transcriptContent.appendChild(paragraphElement);
+                        });
+                    }
                 }
             } else if (response.status === 'not_found') {
                 setStatus(response.message, 'error');

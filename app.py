@@ -143,7 +143,7 @@ def is_valid_video_url(url):
                           "https://youtube.com/shorts/"))
 
 def fetch_youtube_transcript(video_url):
-    """Fetch subtitles from YouTube's 'Show transcript'"""
+    """Fetch subtitles from YouTube's 'Show transcript' and add timestamps"""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(video_url, headers=headers)
@@ -173,8 +173,24 @@ def fetch_youtube_transcript(video_url):
 
                 transcript_soup = BeautifulSoup(transcript_response.text, 'lxml-xml')
                 texts = transcript_soup.find_all('text')
-                transcript = '\n'.join([text.get_text() for text in texts])
-                return transcript
+                
+                # Format transcript with timestamps
+                transcript_with_timestamps = []
+                for text in texts:
+                    # Get the start time in seconds and convert to HH:MM:SS format
+                    start_seconds = float(text.get('start', 0))
+                    duration = float(text.get('dur', 0))
+                    end_seconds = start_seconds + duration
+                    
+                    # Format timestamps
+                    start_timestamp = format_timestamp(start_seconds)
+                    end_timestamp = format_timestamp(end_seconds)
+                    
+                    # Add formatted text with timestamp
+                    timestamp = f"[{start_timestamp} --> {end_timestamp}]"
+                    transcript_with_timestamps.append(f"{timestamp} {text.get_text().strip()}")
+                
+                return "\n".join(transcript_with_timestamps)
 
         return None
 
@@ -182,27 +198,29 @@ def fetch_youtube_transcript(video_url):
         logging.error(f"Failed to fetch subtitles: {str(e)}")
         return None
 
+
 def generate_subtitles_from_audio(video_url, model_name="small", language="auto"):
     """Generate subtitles from video audio using Whisper, handling long audio"""
     try:
-        # Load model on demand
+        # 加载模型 (保持不变)
         if model_name not in WHISPER_MODELS:
             logging.info(f"Loading Whisper model: {model_name}")
             WHISPER_MODELS[model_name] = whisper.load_model(model_name)
         
-        # Download audio using yt-dlp
+        # 下载音频 (保持不变)
         audio_file = os.path.join(TEMP_DIR, "temp_audio.mp3")
         command = [
             "yt-dlp",
-            "-x",  # Extract audio
+            "-x",
             "--audio-format", "mp3",
-            "--audio-quality", "0",  # Best quality
+            "--audio-quality", "0",
             "-o", audio_file,
             video_url
         ]
         logging.info(f"Downloading audio from {video_url}")
         process = subprocess.run(command, capture_output=True, text=True)
         
+        # 错误检查 (保持不变)
         if process.returncode != 0:
             logging.error(f"Failed to download audio: {process.stderr}")
             return None
@@ -218,11 +236,11 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
             logging.error("Downloaded audio file is empty")
             return None
 
-        # Load audio and split into segments
+        # 加载音频 (保持不变)
         try:
             audio = AudioSegment.from_mp3(audio_file)
             audio_length_ms = len(audio)
-            logging.info(f"Audio loaded successfully. Length: {audio_length_ms / 1000 / 60:.2f} minutes, Channels: {audio.channels}, Frame rate: {audio.frame_rate}")
+            logging.info(f"Audio loaded successfully. Length: {audio_length_ms / 1000 / 60:.2f} minutes")
             
             if audio_length_ms == 0:
                 logging.error("Audio has zero length")
@@ -231,20 +249,22 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
             logging.error(f"Failed to load audio file: {str(e)}")
             return None
 
-        transcript = []
+        transcript_segments = []
         model = WHISPER_MODELS[model_name]
+        
+        segment_start_time = 0  # 跟踪每个片段的开始时间（秒）
 
-        # Process in segments to avoid memory issues
+        # 分段处理
         for start_ms in range(0, audio_length_ms, SEGMENT_LENGTH_MS):
             end_ms = min(start_ms + SEGMENT_LENGTH_MS, audio_length_ms)
             segment = audio[start_ms:end_ms]
             segment_file = os.path.join(TEMP_DIR, f"temp_audio_segment_{start_ms // 1000}.wav")
             
-            # Export with specific parameters for Whisper
+            # 导出段落
             segment.export(
                 segment_file, 
                 format="wav", 
-                parameters=["-ar", "16000", "-ac", "1"]  # 16kHz, mono audio as recommended for Whisper
+                parameters=["-ar", "16000", "-ac", "1"]
             )
             
             segment_size = os.path.getsize(segment_file)
@@ -252,29 +272,49 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
             
             if segment_size == 0:
                 logging.error(f"Segment file is empty: {segment_file}")
-                transcript.append("[Empty audio segment]")
+                transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Empty audio segment]")
                 continue
 
-            # Transcribe segment
+            # 转录段落
             try:
-                # Use specified language or auto-detect
-                transcribe_options = {"task": "transcribe"}
+                # 使用指定语言或自动检测
+                transcribe_options = {
+                    "task": "transcribe", 
+                    "verbose": True,  # 启用详细输出以获取段落级别的信息
+                }
                 if language != "auto":
                     transcribe_options["language"] = language
                 
+                # 使用 Whisper 的详细输出获取时间戳和段落
                 result = model.transcribe(segment_file, **transcribe_options)
-                if result and "text" in result and result["text"].strip():
-                    transcript.append(result["text"])
-                    logging.info(f"Successfully transcribed segment {start_ms // 1000}s to {end_ms // 1000}s")
+                
+                if result and "segments" in result and result["segments"]:
+                    # 处理每个带时间戳的段落
+                    for segment_result in result["segments"]:
+                        # 计算绝对时间戳（考虑当前片段在整个音频中的位置）
+                        abs_start = segment_start_time + segment_result["start"]
+                        abs_end = segment_start_time + segment_result["end"]
+                        
+                        # 格式化带时间戳的文本行
+                        timestamp = f"[{format_timestamp(abs_start)} --> {format_timestamp(abs_end)}]"
+                        text = segment_result["text"].strip()
+                        
+                        if text:  # 如果文本不为空
+                            transcript_segments.append(f"{timestamp} {text}")
+                            
+                    logging.info(f"Successfully transcribed segment with {len(result['segments'])} segments")
                 else:
                     logging.warning(f"Empty transcription for segment {start_ms // 1000}s to {end_ms // 1000}s")
-                    transcript.append("[Inaudible segment]")
+                    transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Inaudible segment]")
             except Exception as e:
                 logging.error(f"Error transcribing segment {start_ms // 1000}s to {end_ms // 1000}s: {str(e)}")
-                transcript.append(f"[Transcription error in segment {start_ms // 1000}s to {end_ms // 1000}s]")
+                transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Transcription error]")
+            
+            # 更新下一个片段的开始时间（秒）
+            segment_start_time += (end_ms - start_ms) / 1000
 
-        # Combine all segments
-        full_transcript = "\n".join(transcript)
+        # 合并所有段落，每个段落一行
+        full_transcript = "\n".join(transcript_segments)
         if not full_transcript.strip():
             logging.error("Generated transcript is empty")
             return None
@@ -284,6 +324,15 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
     except Exception as e:
         logging.error(f"Failed to generate subtitles: {str(e)}")
         return None
+
+def format_timestamp(seconds):
+    """将秒数格式化为 HH:MM:SS 格式的时间戳"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 
 def clean_temp_files():
     """Clean up all temporary files"""
