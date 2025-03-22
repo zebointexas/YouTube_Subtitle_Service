@@ -38,13 +38,13 @@
                     <polyline points="7 10 12 15 17 10"></polyline>
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
-                Download Subtitles
+                Download Existing Transcript 
             </button>
             <button id="force-transcribe-btn" class="force-transcribe-btn" onclick="forceTranscribe()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 8l-5-5-5 5M12 3v12"></path>
                 </svg>
-                Generate New Transcription
+                Generate New Transcript
             </button>
         </div>
         
@@ -58,6 +58,14 @@
             <div id="output-message"></div>
             
             <ul id="file-list" class="file-list"></ul>
+            
+            <div id="transcript-warning" class="transcript-warning" style="display: none;">
+                <p style="color: #e74c3c; background-color: #ffeaea; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                    ⚠️ If you're not satisfied with the existing transcript, you can use the 
+                    <strong>"Generate New Transcript"</strong> button to generate a higher-quality transcript with Whisper.
+                    <br>(Please note: This process may take 10 to 100 minutes depending on the video length, so please be patient.)
+                </p>
+            </div>
         </div>
         
         <div id="transcript-container" class="transcript-container">
@@ -109,11 +117,13 @@
         const modelSelect = document.getElementById('model-select');
         const addTimestampsCheckbox = document.getElementById('add-timestamps');
         const forceTranscribeBtn = document.getElementById('force-transcribe-btn');
+        const transcriptWarning = document.getElementById('transcript-warning');
         
         // Store original transcript for formatting
         let originalTranscript = '';
         let processedTranscriptLines = [];
         let isTranscriptMeaningful = true; // Flag to track if transcript seems meaningful
+        let isForceGenerated = false; // Flag to track if transcript was forcefully generated
         
         // Allow Enter key to trigger download
         document.getElementById('url').addEventListener('keypress', function(event) {
@@ -143,8 +153,10 @@
             fileList.innerHTML = '';
             transcriptContent.innerHTML = '';
             statusIndicator.style.display = 'none';
+            transcriptWarning.style.display = 'none';
             originalTranscript = '';
             processedTranscriptLines = [];
+            isForceGenerated = false;
         }
         
         function download() {
@@ -189,6 +201,11 @@
                 forceTranscribeBtn.disabled = false;
                 
                 if (data.status === 'success') {
+                    // Check if transcript was found or if backend had to generate one
+                    if (data.source === 'generated') {
+                        isForceGenerated = true;
+                    }
+                    
                     setStatus('Success!', 'success');
                     resultContainer.style.display = 'block';
                     outputMessage.textContent = data.message;
@@ -211,21 +228,16 @@
                         // Check if transcript seems meaningful
                         isTranscriptMeaningful = checkTranscriptQuality(data.transcript);
                         
-                        // Show recommendation to use force transcribe if transcript seems poor quality
-                        if (!isTranscriptMeaningful) {
-                            const warningElement = document.createElement('div');
-                            warningElement.className = 'transcript-warning';
-                            warningElement.innerHTML = `
-                                <p style="color: #e74c3c; background-color: #ffeaea; padding: 10px; border-radius: 4px; margin-top: 10px;">
-                                    ⚠️ This transcript may not be of good quality. Consider using the 
-                                    <strong>"Generate New Transcription"</strong> button to create a better transcript using Whisper.
-                                </p>
-                            `;
-                            resultContainer.appendChild(warningElement);
+                        // Always show recommendation warning except for force-generated transcripts
+                        if (!isForceGenerated) {
+                            transcriptWarning.style.display = 'block';
                         }
                         
                         // Process transcript with or without timestamps
                         processTranscript(data.transcript, addTimestamps);
+                    } else {
+                        // No transcript found, show alert
+                        alert("No existing transcript found. Please try the 'Generate New Transcript' button to create one using Whisper AI.");
                     }
                 } else {
                     setStatus(`Error: ${data.message}`, 'error');
@@ -412,7 +424,8 @@
             
             // Reset UI and show loading status
             resetUI();
-            setStatus('Generating new transcription... This may take several minutes for longer videos.', 'loading');
+            isForceGenerated = true; // Set flag to indicate forced generation
+            setStatus('Generating new transcription... This may take several minutes for longer videos (10-100 minutes depending on video length - longer video will take longer process time).', 'loading');
             
             // Disable download buttons
             downloadBtn.disabled = true;
