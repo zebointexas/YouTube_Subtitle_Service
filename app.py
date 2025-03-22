@@ -8,6 +8,7 @@ from pydub import AudioSegment
 import logging
 import json
 import shutil
+import time
 
 # Configure logging for debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,14 +30,24 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 def index():
     return render_template('index.html')
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """API health check endpoint"""
+    return jsonify({
+        'status': 'ok',
+        'timestamp': time.time(),
+        'version': '1.0'
+    })
+
 @app.route('/download', methods=['POST'])
 def download_subtitles():
     global SELECTED_MODEL
     try:
         video_url = request.form['url']
         model_name = request.form.get('model', SELECTED_MODEL)
-        # Flag to indicate if we should force transcription even if no subtitles are found
+        # Flag to indicate if we should force transcription even if subtitles are found
         force_transcribe = request.form.get('force_transcribe', 'false').lower() == 'true'
+        language = request.form.get('language', 'auto')
         SELECTED_MODEL = model_name
         
         result = {'status': 'success', 'files': [], 'message': '', 'transcript': '', 'source': ''}
@@ -44,6 +55,24 @@ def download_subtitles():
         # Validate URL format
         if not is_valid_video_url(video_url):
             return jsonify({'status': 'error', 'message': 'Invalid YouTube URL format'})
+
+        # If force_transcribe is True, skip the subtitle fetching steps and go straight to generating
+        if force_transcribe:
+            logging.info(f"Force transcription requested for {video_url}, skipping subtitle checks")
+            transcript = generate_subtitles_from_audio(video_url, model_name, language)
+            if transcript:
+                result['transcript'] = transcript
+                result['message'] = f'Subtitles generated from audio successfully using Whisper ({model_name})!'
+                result['source'] = 'generated'
+                logging.info("Subtitles generated successfully")
+                clean_temp_files()
+                return jsonify(result)
+            else:
+                result['status'] = 'error'
+                result['message'] = 'Failed to generate subtitles from audio. Please try a different model or check the video.'
+                logging.error("Failed to generate subtitles")
+                clean_temp_files()
+                return jsonify(result)
 
         # Step 1: Try fetching from YouTube's "Show transcript"
         logging.info(f"Checking 'Show transcript' for {video_url}")
@@ -54,7 +83,7 @@ def download_subtitles():
             result['source'] = 'youtube'
             logging.info("Found 'Show transcript' subtitles")
             return jsonify(result)
-
+ 
         # Step 2: Try downloading subtitle files with yt-dlp
         logging.info("Attempting to download subtitle files with yt-dlp")
         output_file = os.path.join(app.static_folder, "subtitles")
@@ -83,7 +112,7 @@ def download_subtitles():
         
         # Step 3: Only generate subtitles if force_transcribe is True
         logging.info("Forced transcription requested, generating from audio")
-        transcript = generate_subtitles_from_audio(video_url, model_name)
+        transcript = generate_subtitles_from_audio(video_url, model_name, language)
         if transcript:
             result['transcript'] = transcript
             result['message'] = f'Subtitles generated from audio successfully using Whisper ({model_name})!'
@@ -110,7 +139,8 @@ def is_valid_video_url(url):
     return url.startswith(("https://www.youtube.com/watch", 
                           "https://youtube.com/watch",
                           "https://youtu.be/",
-                          "https://www.youtube.com/shorts/"))
+                          "https://www.youtube.com/shorts/",
+                          "https://youtube.com/shorts/"))
 
 def fetch_youtube_transcript(video_url):
     """Fetch subtitles from YouTube's 'Show transcript'"""
@@ -152,7 +182,7 @@ def fetch_youtube_transcript(video_url):
         logging.error(f"Failed to fetch subtitles: {str(e)}")
         return None
 
-def generate_subtitles_from_audio(video_url, model_name="small"):
+def generate_subtitles_from_audio(video_url, model_name="small", language="auto"):
     """Generate subtitles from video audio using Whisper, handling long audio"""
     try:
         # Load model on demand
@@ -227,7 +257,12 @@ def generate_subtitles_from_audio(video_url, model_name="small"):
 
             # Transcribe segment
             try:
-                result = model.transcribe(segment_file)
+                # Use specified language or auto-detect
+                transcribe_options = {"task": "transcribe"}
+                if language != "auto":
+                    transcribe_options["language"] = language
+                
+                result = model.transcribe(segment_file, **transcribe_options)
                 if result and "text" in result and result["text"].strip():
                     transcript.append(result["text"])
                     logging.info(f"Successfully transcribed segment {start_ms // 1000}s to {end_ms // 1000}s")
@@ -293,7 +328,23 @@ def select_model():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-# Add a route to clear temporary files manually
+@app.route('/languages', methods=['GET'])
+def get_languages():
+    """Return supported languages list"""
+    # Main languages supported by Whisper
+    languages = {
+        "auto": "Auto detect",
+        "zh": "Chinese",
+        "en": "English",
+        "fr": "French",
+        "de": "German",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "es": "Spanish",
+        "ru": "Russian"
+    }
+    return jsonify(languages)
+
 @app.route('/clear_temp', methods=['POST'])
 def clear_temp():
     """Manually clear temporary files"""
@@ -317,4 +368,4 @@ import atexit
 atexit.register(cleanup_on_shutdown)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)

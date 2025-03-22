@@ -1,29 +1,21 @@
-:root {
-    --primary-color: #ff0000;
-    --secondary-color: #f1f1f1;
-    --text-color: #333;
-    --success-color: #4caf50;
-    --error-color: #f44336;
-    --card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    --timestamp-color: #666;
+/* 基本样式 */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    margin: 0;
-    padding: 20px;
-    background-color: #fafafa;
-    color: var(--text-color);
+    background-color: #f5f5f5;
+    color: #333;
     line-height: 1.6;
+    padding: 20px;
 }
 
 .container {
     max-width: 800px;
     margin: 0 auto;
-    padding: 20px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: var(--card-shadow);
 }
 
 header {
@@ -32,75 +24,90 @@ header {
 }
 
 h1 {
-    color: var(--primary-color);
+    color: #c00;
     margin-bottom: 10px;
 }
 
 .subtitle {
     color: #666;
-    font-size: 1rem;
+    font-size: 1.1em;
+}
+
+.card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     margin-bottom: 20px;
 }
 
 .input-group {
-    display: flex;
     margin-bottom: 20px;
 }
 
 input[type="text"] {
-    flex: 1;
+    width: 100%;
     padding: 12px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    font-size: 16px;
+    font-size: 1em;
     transition: border-color 0.3s;
 }
 
 input[type="text"]:focus {
+    border-color: #c00;
     outline: none;
-    border-color: var(--primary-color);
+}
+
+.quality-selector {
+    margin-bottom: 20px;
+}
+
+.quality-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.quality-button {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.quality-button:hover {
+    background-color: #f9f9f9;
+}
+
+.quality-button.selected {
+    border-color: #c00;
+    background-color: #fff0f0;
+    font-weight: bold;
 }
 
 .action-buttons {
     display: flex;
-    flex-wrap: wrap;
     gap: 10px;
-    margin-bottom: 20px;
-}
-
-.checkbox-container {
-    display: flex;
-    align-items: center;
-    margin-bottom: 20px;
-    margin-left: 10px;
-}
-
-.checkbox-container input[type="checkbox"] {
-    margin-right: 8px;
 }
 
 button {
-    padding: 12px 20px;
+    flex: 1;
+    padding: 12px;
+    background-color: #c00;
+    color: white;
     border: none;
     border-radius: 4px;
-    background-color: var(--primary-color);
-    color: white;
-    font-size: 16px;
+    font-size: 1em;
     cursor: pointer;
-    transition: background-color 0.3s, transform 0.1s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    transition: background-color 0.3s;
 }
 
 button:hover {
-    background-color: #e50000;
-    transform: translateY(-2px);
-}
-
-button:active {
-    transform: translateY(0);
+    background-color: #b00;
 }
 
 button:disabled {
@@ -108,212 +115,112 @@ button:disabled {
     cursor: not-allowed;
 }
 
-.model-selector {
-    display: flex;
+.status-indicator {
+    display: none;
     align-items: center;
+    justify-content: center;
+    padding: 15px;
     margin-bottom: 20px;
-}
-
-.model-selector label {
-    margin-right: 15px;
+    border-radius: 4px;
     font-weight: bold;
 }
 
-select {
-    padding: 8px 12px;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-    background-color: white;
-}
-
-.status-indicator {
-    margin-top: 20px;
-    padding: 15px;
-    border-radius: 4px;
-    display: none;
+.status-loading {
+    background-color: #f0f7ff;
+    color: #0066cc;
 }
 
 .status-success {
-    background-color: #e8f5e9;
-    color: var(--success-color);
-    border-left: 4px solid var(--success-color);
-    display: block;
+    background-color: #f0fff0;
+    color: #008800;
 }
 
 .status-error {
-    background-color: #ffebee;
-    color: var(--error-color);
-    border-left: 4px solid var(--error-color);
-    display: block;
-}
-
-.status-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    background-color: #e3f2fd;
-    color: #2196f3;
-    border-left: 4px solid #2196f3;
+    background-color: #fff0f0;
+    color: #cc0000;
 }
 
 .loading-spinner {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #0066cc;
+    border-radius: 50%;
     width: 20px;
     height: 20px;
-    border: 3px solid rgba(33, 150, 243, 0.3);
-    border-radius: 50%;
-    border-top-color: #2196f3;
     animation: spin 1s linear infinite;
+    margin-right: 10px;
+    display: none;
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
-.result-container {
-    margin-top: 30px;
+.result-container, .transcript-container {
     display: none;
 }
 
 .file-list {
-    margin: 15px 0;
-    padding: 0;
     list-style: none;
+    margin-top: 15px;
 }
 
 .file-list li {
-    padding: 10px;
-    background-color: var(--secondary-color);
-    margin-bottom: 5px;
-    border-radius: 4px;
     display: flex;
     justify-content: space-between;
-    align-items: center;
-}
-
-.download-link {
-    color: var(--primary-color);
-    text-decoration: none;
-    font-weight: bold;
-}
-
-.transcript-container {
-    margin-top: 30px;
-    border: 1px solid #ddd;
+    padding: 10px;
+    background-color: #f9f9f9;
+    margin-bottom: 5px;
     border-radius: 4px;
-    padding: 20px;
-    max-height: 400px;
-    overflow-y: auto;
-    display: none;
-}
-
-.transcript-content {
-    white-space: pre-wrap;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    line-height: 1.8;
-}
-
-.transcript-line {
-    margin-bottom: 15px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
-}
-
-.transcript-line:last-child {
-    border-bottom: none;
-}
-
-.timestamp {
-    color: var(--timestamp-color);
-    font-size: 0.9em;
-    font-weight: bold;
-    margin-right: 10px;
-    user-select: none;
-    display: inline-block;
-    min-width: 80px;
-}
-
-.transcript-text {
-    display: inline;
 }
 
 .transcript-toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
 
-.copy-btn {
-    background-color: #4caf50;
+.copy-btn, .save-btn {
+    padding: 8px 15px;
+    background-color: #444;
 }
 
-.save-btn {
-    background-color: #2196f3;
+.transcript-content {
+    max-height: 400px;
+    overflow-y: auto;
+    background-color: #f9f9f9;
+    padding: 15px;
+    border-radius: 4px;
+    white-space: pre-wrap;
 }
 
-.format-controls {
-    margin-top: 10px;
-    display: flex;
-    align-items: center;
-    gap: 15px;
+.transcript-line {
+    margin-bottom: 15px;
 }
 
-.timestamp-toggle label {
-    margin-left: 5px;
-    user-select: none;
+.transcript-notice {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #fff8e1;
+    border-left: 4px solid #ffc107;
 }
 
 footer {
-    margin-top: 30px;
     text-align: center;
-    color: #666;
-    font-size: 0.8rem;
+    margin-top: 30px;
+    color: #888;
+    font-size: 0.9em;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .input-group {
-        flex-direction: column;
-    }
-    
-    input[type="text"] {
-        margin-bottom: 10px;
-    }
-    
-    .action-buttons {
-        flex-direction: column;
-    }
-    
-    button {
-        width: 100%;
-    }
-    
-    .timestamp {
-        display: block;
-        margin-bottom: 5px;
-    }
-}
-
-.force-transcribe-btn {
-    background-color: #6f42c1;
+.download-link {
+    background-color: #c00;
     color: white;
-    border: none;
+    padding: 5px 10px;
     border-radius: 4px;
-    padding: 6px 12px;
-    margin-right: 8px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    transition: background-color 0.2s;
+    text-decoration: none;
 }
 
-.force-transcribe-btn:hover {
-    background-color: #5a32a3;
-}
-
-.force-transcribe-btn:active {
-    background-color: #4c2888;
+.download-link:hover {
+    background-color: #b00;
 }
