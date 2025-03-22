@@ -247,7 +247,7 @@
             
             if (generateNew) {
                 const qualityLevel = selectedModel === 'medium' ? 'premium' : 'standard';
-                setStatus(`Generating new transcript with ${qualityLevel} quality... This may take several minutes for longer videos.`, 'loading');
+                setStatus(`Generating new transcript with ${qualityLevel} quality... This may take 10 - 100 minutes for longer videos.`, 'loading');
             } else {
                 setStatus('Downloading existing subtitles... Please wait.', 'loading');
             }
@@ -292,6 +292,53 @@
                     setStatus('Successfully generated new transcript!', 'success');
                     // Hide generation panel after successful generation
                     generationPanel.style.display = 'none';
+                    
+                    // 禁用下载按钮
+                    downloadBtn.disabled = true;
+                    downloadBtn.style.backgroundColor = '#999';
+                    
+                    // 创建右上角新视频按钮
+                    if (!document.getElementById('new-video-btn')) {
+                        // 创建一个固定在右上角的按钮容器
+                        const buttonContainer = document.createElement('div');
+                        buttonContainer.id = 'new-video-button-container';
+                        buttonContainer.style.position = 'fixed';
+                        buttonContainer.style.top = '80px'; // 距离顶部的位置
+                        buttonContainer.style.right = '20px'; // 距离右侧的位置
+                        buttonContainer.style.zIndex = '1000'; // 确保按钮显示在其他元素上方
+                        
+                        // 创建"下载新视频"按钮
+                        const newVideoBtn = document.createElement('button');
+                        newVideoBtn.id = 'new-video-btn';
+                        newVideoBtn.textContent = 'Try another video';
+                        newVideoBtn.className = 'primary-button';
+                        newVideoBtn.style.padding = '8px 15px';
+                        newVideoBtn.style.backgroundColor = '#3498db';
+                        newVideoBtn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+                        newVideoBtn.style.border = 'none';
+                        newVideoBtn.style.borderRadius = '4px';
+                        
+                        // 添加事件监听器
+                        newVideoBtn.addEventListener('click', function() {
+                            // 重置URL输入框
+                            document.getElementById('url').value = '';
+                            // 重置界面
+                            resetUI();
+                            // 启用下载按钮
+                            downloadBtn.disabled = false;
+                            downloadBtn.style.backgroundColor = '';
+                            // 移除此按钮容器
+                            document.body.removeChild(buttonContainer);
+                            // 滚动到页面顶部
+                            window.scrollTo(0, 0);
+                        });
+                        
+                        // 将按钮添加到容器中
+                        buttonContainer.appendChild(newVideoBtn);
+                        
+                        // 将容器添加到body
+                        document.body.appendChild(buttonContainer);
+                    }
                 } else {
                     setStatus('Successfully downloaded existing transcript!', 'success');
                 }
