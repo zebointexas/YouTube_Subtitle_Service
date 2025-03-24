@@ -22,7 +22,7 @@ TEMP_DIR = "temp_audio_files"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 # Gemini API configuration
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBgLyImS_akhGoVaGYxioyv4DtydApFKnk")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Gemini model selection
