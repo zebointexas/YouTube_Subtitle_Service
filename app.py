@@ -10,6 +10,7 @@ import time
 import base64
 from pydub import AudioSegment
 import google.generativeai as genai
+import whisper  # 导入whisper库进行本地处理
 
 # Configure logging for debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,31 +21,29 @@ app = Flask(__name__)
 TEMP_DIR = "temp_audio_files"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-
 # Gemini API configuration
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBgLyImS_akhGoVaGYxioyv4DtydApFKnk")  # 请替换为你的 Gemini API 密钥
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBgLyImS_akhGoVaGYxioyv4DtydApFKnk")
 genai.configure(api_key=GOOGLE_API_KEY)
 
-GEMINI_MODEL = "gemini-1.5-flash"  # 或 "gemini-1.5-pro" 如果可用
-
-# Gemini model selection (免费层级可用 "gemini-1.5-flash" 或 "gemini-1.5-pro"，视可用性而定)
-GEMINI_MODEL = "gemini-1.5-flash"  # 免费且支持大上下文，建议使用
+# Gemini model selection
+GEMINI_MODEL = "gemini-1.5-flash"
 
 # Audio segment length (in milliseconds, 10 minutes per segment)
 SEGMENT_LENGTH_MS = 10 * 60 * 1000  # 10 minutes
 
-# [其他路由保持不变，如 /, /api/health, /download, /models 等]
- 
- 
-# Available Whisper models
-WHISPER_MODELS = {}
-SELECTED_MODEL = "small"  # Default to small, change to "medium" for better accuracy 
+# 本地Whisper模型配置
+WHISPER_MODELS = {
+    "tiny": "tiny",
+    "base": "base",
+    "small": "small",
+    "medium": "medium",
+    "large": "large"
+}
 
+# 已加载的模型缓存
+loaded_whisper_models = {}
 
- 
-
-
-
+SELECTED_MODEL = "small"  # 默认使用small模型
 
 @app.route('/')
 def index():
@@ -150,9 +149,6 @@ def download_subtitles():
         logging.error(f"Download failed: {str(e)}")
         clean_temp_files()
         return jsonify({'status': 'error', 'message': f'Download failed: {str(e)}'})
-
-
-
 
 def generate_summary(transcript):
     """Generate an intelligent and flexible summary based on input content characteristics"""
@@ -388,8 +384,6 @@ def detect_language(text):
     # Default to 'en' (English) or other Latin-script languages
     return 'en'
 
-
-
 def is_valid_video_url(url):
     """Check if the URL is a valid YouTube URL"""
     return url.startswith(("https://www.youtube.com/watch", 
@@ -454,8 +448,33 @@ def fetch_youtube_transcript(video_url):
         logging.error(f"Failed to fetch subtitles: {str(e)}")
         return None
 
+def get_whisper_model(model_name="small"):
+    """获取或加载Whisper模型"""
+    global loaded_whisper_models
+    
+    if model_name not in loaded_whisper_models:
+        logging.info(f"Loading Whisper model: {model_name}")
+        try:
+            # 加载指定的模型
+            loaded_whisper_models[model_name] = whisper.load_model(model_name)
+            logging.info(f"Successfully loaded Whisper model: {model_name}")
+        except Exception as e:
+            logging.error(f"Failed to load Whisper model {model_name}: {str(e)}")
+            # 如果加载失败，尝试加载基础模型
+            if model_name != "base":
+                logging.info("Trying to load base model instead")
+                try:
+                    loaded_whisper_models[model_name] = whisper.load_model("base")
+                    return loaded_whisper_models[model_name]
+                except:
+                    logging.error("Could not load any Whisper model")
+                    return None
+            return None
+    
+    return loaded_whisper_models[model_name]
+
 def generate_subtitles_from_audio(video_url, model_name="small", language="auto"):
-    """Generate subtitles from video audio using Hugging Face Whisper API"""
+    """Generate subtitles from video audio using local Whisper model"""
     try:
         # Download audio
         audio_file = os.path.join(TEMP_DIR, "temp_audio.mp3")
@@ -485,115 +504,51 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
         if file_size == 0:
             logging.error("Downloaded audio file is empty")
             return None
-
-        # Load audio
-        try:
-            audio = AudioSegment.from_mp3(audio_file)
-            audio_length_ms = len(audio)
-            logging.info(f"Audio loaded successfully. Length: {audio_length_ms / 1000 / 60:.2f} minutes")
             
-            if audio_length_ms == 0:
-                logging.error("Audio has zero length")
-                return None
-        except Exception as e:
-            logging.error(f"Failed to load audio file: {str(e)}")
+        # 获取Whisper模型
+        model = get_whisper_model(model_name)
+        if model is None:
+            logging.error(f"Failed to get Whisper model: {model_name}")
             return None
-
-        # Get Hugging Face model path
-        hf_model_path = WHISPER_MODELS.get(model_name, WHISPER_MODELS["small"])
-        api_url = f"{HF_API_URL}{hf_model_path}"
-        headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+            
+        # 设置转写参数
+        whisper_options = {
+            "verbose": False,
+            "task": "transcribe"
+        }
         
-        transcript_segments = []
-        segment_start_time = 0  # Track start time of each segment (seconds)
-
-        # Process in segments
-        for start_ms in range(0, audio_length_ms, SEGMENT_LENGTH_MS):
-            end_ms = min(start_ms + SEGMENT_LENGTH_MS, audio_length_ms)
-            segment = audio[start_ms:end_ms]
-            segment_file = os.path.join(TEMP_DIR, f"temp_audio_segment_{start_ms // 1000}.wav")
-            
-            # Export segment
-            segment.export(
-                segment_file, 
-                format="wav", 
-                parameters=["-ar", "16000", "-ac", "1"]
-            )
-            
-            segment_size = os.path.getsize(segment_file)
-            logging.info(f"Processing segment {start_ms // 1000}s to {end_ms // 1000}s (Size: {segment_size} bytes)")
-            
-            if segment_size == 0:
-                logging.error(f"Segment file is empty: {segment_file}")
-                transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Empty audio segment]")
-                continue
-
-            # Transcribe using Hugging Face API
-            try:
-                with open(segment_file, "rb") as f:
-                    data = f.read()
-                    
-                # Convert audio to base64 for API
-                audio_bytes = base64.b64encode(data).decode("utf-8")
+        # 如果指定了语言，则添加到选项中
+        if language != "auto":
+            whisper_options["language"] = language
+        
+        # 转写音频
+        logging.info(f"Transcribing audio with Whisper model: {model_name}")
+        result = model.transcribe(audio_file, **whisper_options)
+        
+        if result and "segments" in result:
+            # 格式化转写结果，添加时间戳
+            transcript_segments = []
+            for segment in result["segments"]:
+                start_time = segment.get("start", 0)
+                end_time = segment.get("end", 0)
+                text = segment.get("text", "").strip()
                 
-                # Prepare API parameters
-                payload = {
-                    "inputs": {
-                        "audio": audio_bytes
-                    },
-                    "parameters": {
-                        "return_timestamps": True
-                    }
-                }
-                
-                # Set language if specified
-                if language != "auto":
-                    payload["parameters"]["language"] = language
-                
-                # Submit transcription request
-                logging.info(f"Sending audio segment to Hugging Face API ({hf_model_path})")
-                response = requests.post(api_url, headers=headers, json=payload)
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    # Extract segments with timestamps from response
-                    if "chunks" in result:
-                        # New API response format with chunks
-                        for chunk in result["chunks"]:
-                            if "timestamp" in chunk and chunk.get("text"):
-                                # Extract timestamp ranges
-                                ts = chunk["timestamp"]
-                                if isinstance(ts, list) and len(ts) == 2:
-                                    # Convert timestamps and adjust for segment position
-                                    abs_start = segment_start_time + ts[0]
-                                    abs_end = segment_start_time + ts[1]
-                                    
-                                    # Format timestamp
-                                    timestamp = f"[{format_timestamp(abs_start)} --> {format_timestamp(abs_end)}]"
-                                    transcript_segments.append(f"{timestamp} {chunk['text'].strip()}")
-                    elif isinstance(result, dict) and "text" in result:
-                        # Simple response without timestamps
-                        timestamp = f"[{format_timestamp(segment_start_time)}]"
-                        transcript_segments.append(f"{timestamp} {result['text'].strip()}")
-                else:
-                    logging.error(f"API error: {response.status_code}, {response.text}")
-                    transcript_segments.append(f"[{format_timestamp(segment_start_time)}] [API error: {response.status_code}]")
-                    
-            except Exception as e:
-                logging.error(f"Error transcribing segment {start_ms // 1000}s to {end_ms // 1000}s: {str(e)}")
-                transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Transcription error]")
+                if text:
+                    # 格式化时间戳
+                    start_timestamp = format_timestamp(start_time)
+                    end_timestamp = format_timestamp(end_time)
+                    timestamp = f"[{start_timestamp} --> {end_timestamp}]"
+                    transcript_segments.append(f"{timestamp} {text}")
             
-            # Update start time for next segment (seconds)
-            segment_start_time += (end_ms - start_ms) / 1000
-
-        # Combine all segments
-        full_transcript = "\n".join(transcript_segments)
-        if not full_transcript.strip():
-            logging.error("Generated transcript is empty")
+            full_transcript = "\n".join(transcript_segments)
+            if not full_transcript.strip():
+                logging.error("Generated transcript is empty")
+                return None
+                
+            return full_transcript
+        else:
+            logging.error("No segments found in transcription result")
             return None
-            
-        return full_transcript
 
     except Exception as e:
         logging.error(f"Failed to generate subtitles: {str(e)}")
