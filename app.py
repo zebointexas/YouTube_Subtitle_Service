@@ -9,6 +9,10 @@ import logging
 import json
 import shutil
 import time
+ 
+from transformers import pipeline  # Import transformers for summarization
+from transformers import BartTokenizer
+
 
 # Configure logging for debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,13 +30,17 @@ SEGMENT_LENGTH_MS = 15 * 60 * 1000  # 15 minutes
 TEMP_DIR = "temp_audio_files"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+
+# Global variables (for efficiency)
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+tokenizer = BartTokenizer.from_pretrained("facebook/bart-large-cnn")
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """API health check endpoint"""
     return jsonify({
         'status': 'ok',
         'timestamp': time.time(),
@@ -45,18 +53,15 @@ def download_subtitles():
     try:
         video_url = request.form['url']
         model_name = request.form.get('model', SELECTED_MODEL)
-        # Flag to indicate if we should force transcription even if subtitles are found
         force_transcribe = request.form.get('force_transcribe', 'false').lower() == 'true'
         language = request.form.get('language', 'auto')
         SELECTED_MODEL = model_name
         
-        result = {'status': 'success', 'files': [], 'message': '', 'transcript': '', 'source': ''}
+        result = {'status': 'success', 'files': [], 'message': '', 'transcript': '', 'source': '', 'summary': ''}
 
-        # Validate URL format
         if not is_valid_video_url(video_url):
             return jsonify({'status': 'error', 'message': 'Invalid YouTube URL format'})
 
-        # If force_transcribe is True, skip the subtitle fetching steps and go straight to generating
         if force_transcribe:
             logging.info(f"Force transcription requested for {video_url}, skipping subtitle checks")
             transcript = generate_subtitles_from_audio(video_url, model_name, language)
@@ -64,7 +69,8 @@ def download_subtitles():
                 result['transcript'] = transcript
                 result['message'] = f'Subtitles generated from audio successfully using Whisper ({model_name})!'
                 result['source'] = 'generated'
-                logging.info("Subtitles generated successfully")
+                result['summary'] = generate_summary(transcript)  # Generate summary
+                logging.info("Subtitles and summary generated successfully")
                 clean_temp_files()
                 return jsonify(result)
             else:
@@ -74,24 +80,24 @@ def download_subtitles():
                 clean_temp_files()
                 return jsonify(result)
 
-        # Step 1: Try fetching from YouTube's "Show transcript"
+        # Try fetching from YouTube's "Show transcript"
         logging.info(f"Checking 'Show transcript' for {video_url}")
         transcript = fetch_youtube_transcript(video_url)
         if transcript:
             result['transcript'] = transcript
             result['message'] = 'Subtitles successfully fetched from YouTube "Show transcript"!'
             result['source'] = 'youtube'
-            logging.info("Found 'Show transcript' subtitles")
+            result['summary'] = generate_summary(transcript)  # Generate summary
+            logging.info("Found 'Show transcript' subtitles and generated summary")
             return jsonify(result)
  
-        # Step 2: Try downloading subtitle files with yt-dlp
+        # Try downloading subtitle files with yt-dlp
         logging.info("Attempting to download subtitle files with yt-dlp")
         output_file = os.path.join(app.static_folder, "subtitles")
         command = ["yt-dlp", "--write-sub", "--skip-download", "-o", output_file, video_url]
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
 
-        # Check for subtitle files in the static directory
         for file in os.listdir(app.static_folder):
             if file.startswith("subtitles") and (file.endswith(".srt") or file.endswith(".vtt")):
                 result['files'].append(file)
@@ -99,40 +105,116 @@ def download_subtitles():
         if result['files']:
             result['message'] = 'Subtitle files downloaded successfully!'
             result['source'] = 'subtitles'
-            logging.info("Subtitle files downloaded successfully")
+            # For simplicity, we'll need to read the subtitle file to generate a summary
+            with open(os.path.join(app.static_folder, result['files'][0]), 'r', encoding='utf-8') as f:
+                transcript = f.read()
+                result['transcript'] = transcript
+                result['summary'] = generate_summary(transcript)
+            logging.info("Subtitle files downloaded and summary generated successfully")
             return jsonify(result)
 
-        # If we reach here, no subtitles were found
         if not force_transcribe:
-            # Return a message indicating no subtitles were found instead of transcribing
             result['status'] = 'not_found'
             result['message'] = 'No existing subtitles found. Use "Generate New Transcript" to create subtitles.'
             logging.info("No subtitles found and force_transcribe is False")
             return jsonify(result)
         
-        # Step 3: Only generate subtitles if force_transcribe is True
         logging.info("Forced transcription requested, generating from audio")
         transcript = generate_subtitles_from_audio(video_url, model_name, language)
         if transcript:
             result['transcript'] = transcript
             result['message'] = f'Subtitles generated from audio successfully using Whisper ({model_name})!'
             result['source'] = 'generated'
-            logging.info("Subtitles generated successfully")
+            result['summary'] = generate_summary(transcript)  # Generate summary
+            logging.info("Subtitles and summary generated successfully")
         else:
             result['status'] = 'error'
             result['message'] = 'Failed to generate subtitles from audio. Please try a different model or check the video.'
             logging.error("Failed to generate subtitles")
 
-        # Clean up temporary files
         clean_temp_files()
-
         return jsonify(result)
 
     except Exception as e:
         logging.error(f"Download failed: {str(e)}")
-        # Clean up temporary files even on error
         clean_temp_files()
         return jsonify({'status': 'error', 'message': f'Download failed: {str(e)}'})
+
+
+
+def generate_summary(transcript):
+    """Generate a detailed summary for long transcripts by splitting into chunks"""
+    try:
+        # Clean the transcript
+        lines = []
+        for line in transcript.split('\n'):
+            if '] ' in line:
+                parts = line.split('] ', 1)
+                if len(parts) > 1 and parts[1].strip():
+                    lines.append(parts[1])
+        clean_text = "\n".join(lines)
+        
+        if not clean_text.strip():
+            return "No content to summarize."
+
+        # Split into chunks of max 1024 tokens
+        max_token_length = 1024
+        tokens = tokenizer(clean_text, return_tensors="pt")["input_ids"][0]
+        total_tokens = len(tokens)
+        logging.info(f"Total tokens: {total_tokens}")
+
+        if total_tokens <= max_token_length:
+            chunks = [clean_text]
+        else:
+            # Estimate character length per chunk
+            chars_per_token = len(clean_text) / total_tokens
+            chars_per_chunk = int(chars_per_token * (max_token_length - 50))  # Leave buffer
+            chunks = [clean_text[i:i + chars_per_chunk] for i in range(0, len(clean_text), chars_per_chunk)]
+            logging.info(f"Split into {len(chunks)} chunks")
+
+        # Generate summaries for each chunk
+        summaries = []
+        for i, chunk in enumerate(chunks):
+            # Ensure each chunk is within token limit
+            chunk_tokens = tokenizer(chunk, truncation=True, max_length=max_token_length, return_tensors="pt")
+            truncated_chunk = tokenizer.decode(chunk_tokens["input_ids"][0], skip_special_tokens=True)
+            logging.info(f"Chunk {i + 1}/{len(chunks)}: {len(chunk_tokens['input_ids'][0])} tokens")
+
+            # Adjust summary length based on chunk size
+            chunk_length = len(truncated_chunk)
+            if chunk_length < 500:
+                min_length = 30
+                max_length = 100
+            elif chunk_length < 2000:
+                min_length = 50
+                max_length = 200
+            else:
+                min_length = 100
+                max_length = 300
+
+            summary = summarizer(
+                truncated_chunk,
+                max_length=max_length,
+                min_length=min_length,
+                do_sample=False,
+                length_penalty=1.0,
+                num_beams=4
+            )[0]['summary_text']
+            summaries.append(summary)
+
+        # Combine summaries
+        final_summary = " ".join(summaries)
+        # Optional: truncate final summary if too long
+        if len(final_summary) > 1000:  # Arbitrary limit for readability
+            final_summary = final_summary[:1000] + "..."
+        
+        return final_summary
+
+    except Exception as e:
+        logging.error(f"Summary generation failed: {str(e)}")
+        return f"Error: {str(e)}"
+    
+# Rest of your existing functions remain unchanged (is_valid_video_url, fetch_youtube_transcript, etc.)
     
 def is_valid_video_url(url):
     """Check if the URL is a valid YouTube URL"""

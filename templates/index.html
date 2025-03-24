@@ -84,6 +84,21 @@
             
             <div id="transcript-content" class="transcript-content"></div>
         </div>
+
+        <div id="summary-container" class="summary-container">
+            <div class="summary-toolbar">
+                <h3>Summary</h3>
+                <div>
+                    <button id="copy-summary-btn" class="copy-btn">
+                        Copy
+                    </button>
+                    <button id="save-summary-btn" class="save-btn">
+                        Save as File
+                    </button>
+                </div>
+            </div>
+            <div id="summary-content" class="summary-content"></div>
+        </div>
         
         <footer>
             <p>Powered by advanced transcription technology</p>
@@ -91,6 +106,12 @@
     </div>
 
     <script>
+
+
+
+
+
+
         let selectedModel = 'small'; // Default model
         let selectedLanguage = 'auto'; // Default language
         
@@ -107,6 +128,10 @@
         const standardQualityBtn = document.getElementById('standard-quality');
         const premiumQualityBtn = document.getElementById('premium-quality');
         const languageSelect = document.getElementById('language-select');
+
+        const summaryContainer = document.getElementById('summary-container');
+        const summaryContent = document.getElementById('summary-content');
+        let originalSummary = '';
         
         let originalTranscript = '';
         let lastVideoUrl = '';
@@ -185,6 +210,38 @@
         document.getElementById('save-btn').addEventListener('click', function() {
             downloadTranscript();
         });
+
+        document.getElementById('copy-summary-btn').addEventListener('click', function() {
+            navigator.clipboard.writeText(originalSummary).then(() => {
+                const copyBtn = document.getElementById('copy-summary-btn');
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                }, 2000);
+            });
+        });
+
+        document.getElementById('save-summary-btn').addEventListener('click', function() {
+            const videoId = extractVideoId(lastVideoUrl);
+            const fileName = videoId ? `summary_${videoId}.txt` : 'summary.txt';
+            const blob = new Blob([originalSummary], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            const saveBtn = document.getElementById('save-summary-btn');
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = 'Saved!';
+            setTimeout(() => {
+                saveBtn.textContent = originalText;
+            }, 2000);
+        });
         
         function setStatus(message, type) {
             statusIndicator.className = 'status-indicator';
@@ -202,11 +259,14 @@
         function resetUI() {
             resultContainer.style.display = 'none';
             transcriptContainer.style.display = 'none';
+            summaryContainer.style.display = 'none';  // Add this
             generationPanel.style.display = 'none';
             fileList.innerHTML = '';
             transcriptContent.innerHTML = '';
+            summaryContent.innerHTML = '';  // Add this
             statusIndicator.style.display = 'none';
             originalTranscript = '';
+            originalSummary = '';  // Add this
         }
         
         function isValidYouTubeUrl(url) {
@@ -282,32 +342,24 @@
         }
 
         function processResponse(response, wasGenerateRequest) {
-            // Enable buttons
             downloadBtn.disabled = false;
             generateBtn.disabled = false;
             
             if (response.status === 'success') {
-                // Set success message based on request type
                 if (wasGenerateRequest) {
-                    setStatus('Successfully generated new transcript!', 'success');
-                    // Hide generation panel after successful generation
+                    setStatus('Successfully generated new transcript and summary!', 'success');
                     generationPanel.style.display = 'none';
-                    
-                    // 禁用下载按钮
                     downloadBtn.disabled = true;
                     downloadBtn.style.backgroundColor = '#999';
                     
-                    // 创建右上角新视频按钮
                     if (!document.getElementById('new-video-btn')) {
-                        // 创建一个固定在右上角的按钮容器
                         const buttonContainer = document.createElement('div');
                         buttonContainer.id = 'new-video-button-container';
                         buttonContainer.style.position = 'fixed';
-                        buttonContainer.style.top = '80px'; // 距离顶部的位置
-                        buttonContainer.style.right = '20px'; // 距离右侧的位置
-                        buttonContainer.style.zIndex = '1000'; // 确保按钮显示在其他元素上方
+                        buttonContainer.style.top = '80px';
+                        buttonContainer.style.right = '20px';
+                        buttonContainer.style.zIndex = '1000';
                         
-                        // 创建"下载新视频"按钮
                         const newVideoBtn = document.createElement('button');
                         newVideoBtn.id = 'new-video-btn';
                         newVideoBtn.textContent = 'Try another video';
@@ -318,29 +370,20 @@
                         newVideoBtn.style.border = 'none';
                         newVideoBtn.style.borderRadius = '4px';
                         
-                        // 添加事件监听器
                         newVideoBtn.addEventListener('click', function() {
-                            // 重置URL输入框
                             document.getElementById('url').value = '';
-                            // 重置界面
                             resetUI();
-                            // 启用下载按钮
                             downloadBtn.disabled = false;
                             downloadBtn.style.backgroundColor = '';
-                            // 移除此按钮容器
                             document.body.removeChild(buttonContainer);
-                            // 滚动到页面顶部
                             window.scrollTo(0, 0);
                         });
                         
-                        // 将按钮添加到容器中
                         buttonContainer.appendChild(newVideoBtn);
-                        
-                        // 将容器添加到body
                         document.body.appendChild(buttonContainer);
                     }
                 } else {
-                    setStatus('Successfully downloaded existing transcript!', 'success');
+                    setStatus('Successfully downloaded existing transcript and generated summary!', 'success');
                 }
                 
                 resultContainer.style.display = 'block';
@@ -361,99 +404,67 @@
                     originalTranscript = response.transcript;
                     transcriptContainer.style.display = 'block';
                     
-                    // Always show the generation panel after successful download
-                    // Only if this wasn't already a generation request
                     if (!wasGenerateRequest) {
                         generationPanel.style.display = 'block';
-                        
-                        // 更新 info-text 提示信息
                         document.querySelector('#generation-panel .info-text').innerHTML = `
                             <div class="transcript-notice">
                                 <h3>Not satisfied with the existing transcript? Generate a new one with our AI.</h3>
-                                <p class="info">
-                                    If you think the current transcript is good enough, there's no need to generate a new one.                            
-                                </p>
-                                <p class="warning">
-                                    ⚠️ <strong>Important Notice:</strong> Generating a new transcript may take 
-                                    <strong>10 to 100 minutes</strong>, or even longer, depending on the length and complexity of the audio. 
-                                    Please be patient while the process runs.
-                                </p>
-                                <p class="refresh-warning">
-                                    🔄 <strong>Do not refresh the page!</strong> If you refresh or leave the page, the transcription process 
-                                    will restart from the beginning.
-                                </p>
+                                <p class="info">If you think the current transcript is good enough, there's no need to generate a new one.</p>
+                                <p class="warning">⚠️ <strong>Important Notice:</strong> Generating a new transcript may take <strong>10 to 100 minutes</strong>, or even longer, depending on the length and complexity of the audio. Please be patient while the process runs.</p>
+                                <p class="refresh-warning">🔄 <strong>Do not refresh the page!</strong> If you refresh or leave the page, the transcription process will restart from the beginning.</p>
                             </div>
                         `;
                     }
 
-                    
-                    // Clear previous content
                     transcriptContent.innerHTML = '';
-                    
-                    // Handle timestamped subtitle format
                     if (response.source === 'generated') {
-                        // Create better display for generated timestamped subtitles
                         const lines = response.transcript.split('\n');
-                        
                         lines.forEach(line => {
                             if (line.trim() === '') return;
-                            
                             const lineElement = document.createElement('div');
                             lineElement.className = 'transcript-line';
-                            
-                            // Check if line contains timestamp format [00:00:00 --> 00:00:00]
                             const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2}) --> (\d{2}:\d{2}:\d{2})\]/);
-                            
                             if (timestampMatch) {
-                                // Separate timestamp and text
                                 const timestamp = timestampMatch[0];
                                 const text = line.substring(timestamp.length).trim();
-                                
-                                // Create timestamp element
                                 const timestampElement = document.createElement('span');
                                 timestampElement.className = 'timestamp';
                                 timestampElement.textContent = timestamp;
-                                
-                                // Create text element
                                 const textElement = document.createElement('span');
                                 textElement.className = 'line-text';
                                 textElement.textContent = text;
-                                
-                                // Add to line element
                                 lineElement.appendChild(timestampElement);
                                 lineElement.appendChild(textElement);
                             } else {
-                                // For lines without recognized timestamp format, display directly
                                 lineElement.textContent = line.trim();
                             }
-                            
                             transcriptContent.appendChild(lineElement);
                         });
                     } else {
-                        // For non-generated subtitles, maintain existing paragraph logic
                         const paragraphs = response.transcript.split(/\n\s*\n/);
-                        
                         paragraphs.forEach(paragraph => {
                             if (paragraph.trim() === '') return;
-                            
                             const paragraphElement = document.createElement('div');
                             paragraphElement.className = 'transcript-line';
                             paragraphElement.textContent = paragraph.trim();
                             transcriptContent.appendChild(paragraphElement);
                         });
                     }
+
+                    // Handle summary
+                    if (response.summary) {
+                        originalSummary = response.summary;
+                        summaryContainer.style.display = 'block';
+                        summaryContent.textContent = response.summary;
+                    }
                 }
             } else if (response.status === 'not_found') {
                 setStatus(response.message, 'error');
-                
-                // Show generation panel if transcript not found
                 generationPanel.style.display = 'block';
                 document.querySelector('#generation-panel .info-text').textContent = 
                     'No existing transcript found. Generate a new transcript with our AI.';
             } else {
                 setStatus(`Error: ${response.message}`, 'error');
-                
-                // Show generation panel on other errors too
                 generationPanel.style.display = 'block';
                 document.querySelector('#generation-panel .info-text').textContent = 
                     'Error fetching transcript. Try generating a new one instead.';
