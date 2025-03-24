@@ -5,6 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Subtitle Downloader</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        /* Simplified generation button */
+        .generation-button {
+            display: inline-flex;
+            align-items: center;
+            margin-top: 15px;
+            margin-bottom: 10px;
+            padding: 10px 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333;
+            border: 1px solid #ddd;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+        
+        .generation-button:hover {
+            background-color: #e9ecef;
+            border-color: #ced4da;
+        }
+        
+        .generation-button .icon {
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            background-color: #ffc107;
+            border-radius: 50%;
+            color: #212529;
+        }
+        
+        /* Style for quality buttons and generate button */
+        .quality-button {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            color: #333;
+        }
+        
+        .quality-button.selected {
+            background-color: #e9ecef;
+            border-color: #ced4da;
+        }
+        
+        #generate-btn {
+            background-color: #dc3545; /* Red color as requested */
+            color: white;
+            border: none;
+        }
+        
+        #generate-btn:hover {
+            background-color: #c82333;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -32,6 +89,18 @@
                     Download Existing Transcript
                 </button>
             </div>
+        </div>
+        
+        <!-- Simplified generation button (initially hidden) -->
+        <div id="generation-button" class="generation-button" style="display: none;">
+            <div class="icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+            </div>
+            <div class="button-text">Not satisfied with the existing transcript? Generate a new one with our AI. Click here</div>
         </div>
         
         <!-- Generation options panel (initially hidden) -->
@@ -106,12 +175,6 @@
     </div>
 
     <script>
-
-
-
-
-
-
         let selectedModel = 'small'; // Default model
         let selectedLanguage = 'auto'; // Default language
         
@@ -125,6 +188,7 @@
         const downloadBtn = document.getElementById('download-btn');
         const generateBtn = document.getElementById('generate-btn');
         const generationPanel = document.getElementById('generation-panel');
+        const generationButton = document.getElementById('generation-button');
         const standardQualityBtn = document.getElementById('standard-quality');
         const premiumQualityBtn = document.getElementById('premium-quality');
         const languageSelect = document.getElementById('language-select');
@@ -151,6 +215,21 @@
         // Language selection event
         languageSelect.addEventListener('change', function() {
             selectedLanguage = this.value;
+        });
+        
+        // Generation button click event
+        generationButton.addEventListener('click', function() {
+            generationButton.style.display = 'none';
+            generationPanel.style.display = 'block';
+            
+            // Update the info text with more detailed information
+            document.querySelector('#generation-panel .info-text').innerHTML = `
+                <div class="transcript-notice">
+                    <p class="info">If you think the current transcript is good enough, there's no need to generate a new one.</p>
+                    <p class="warning">⚠️ <strong>Important Notice:</strong> Generating a new transcript may take <strong>10 to 100 minutes</strong>, or even longer, depending on the length and complexity of the audio. Please be patient while the process runs.</p>
+                    <p class="refresh-warning">🔄 <strong>Do not refresh the page!</strong> If you refresh or leave the page, the transcription process will restart from the beginning.</p>
+                </div>
+            `;
         });
         
         function selectQuality(model, quality) {
@@ -259,14 +338,14 @@
         function resetUI() {
             resultContainer.style.display = 'none';
             transcriptContainer.style.display = 'none';
-            summaryContainer.style.display = 'none';  // Add this
             generationPanel.style.display = 'none';
+            generationButton.style.display = 'none';
             fileList.innerHTML = '';
             transcriptContent.innerHTML = '';
-            summaryContent.innerHTML = '';  // Add this
             statusIndicator.style.display = 'none';
             originalTranscript = '';
-            originalSummary = '';  // Add this
+            // Remove summaryContent.innerHTML = ''; to preserve existing summary
+            // originalSummary = ''; // Keep this if you want to clear the original text, or remove it to preserve
         }
         
         function isValidYouTubeUrl(url) {
@@ -293,10 +372,11 @@
                 return;
             }
             
-            // Reset UI components but not the generation panel
-            // Only hide the results and transcript
+            // Reset UI components
             resultContainer.style.display = 'none';
             transcriptContainer.style.display = 'none';
+            generationButton.style.display = 'none';
+            generationPanel.style.display = 'none';
             fileList.innerHTML = '';
             transcriptContent.innerHTML = '';
             statusIndicator.style.display = 'none';
@@ -349,16 +429,15 @@
                 if (wasGenerateRequest) {
                     setStatus('Successfully generated new transcript and summary!', 'success');
                     generationPanel.style.display = 'none';
+                    generationButton.style.display = 'none';
                     downloadBtn.disabled = true;
                     downloadBtn.style.backgroundColor = '#999';
                     
                     if (!document.getElementById('new-video-btn')) {
                         const buttonContainer = document.createElement('div');
                         buttonContainer.id = 'new-video-button-container';
-                        buttonContainer.style.position = 'fixed';
-                        buttonContainer.style.top = '80px';
-                        buttonContainer.style.right = '20px';
-                        buttonContainer.style.zIndex = '1000';
+                        buttonContainer.style.textAlign = 'center';
+                        buttonContainer.style.marginTop = '20px';
                         
                         const newVideoBtn = document.createElement('button');
                         newVideoBtn.id = 'new-video-btn';
@@ -366,7 +445,6 @@
                         newVideoBtn.className = 'primary-button';
                         newVideoBtn.style.padding = '8px 15px';
                         newVideoBtn.style.backgroundColor = '#3498db';
-                        newVideoBtn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
                         newVideoBtn.style.border = 'none';
                         newVideoBtn.style.borderRadius = '4px';
                         
@@ -375,15 +453,18 @@
                             resetUI();
                             downloadBtn.disabled = false;
                             downloadBtn.style.backgroundColor = '';
-                            document.body.removeChild(buttonContainer);
+                            buttonContainer.remove();
                             window.scrollTo(0, 0);
                         });
                         
                         buttonContainer.appendChild(newVideoBtn);
-                        document.body.appendChild(buttonContainer);
+                        const container = document.querySelector('.container');
+                        container.insertBefore(buttonContainer, resultContainer);
                     }
                 } else {
                     setStatus('Successfully downloaded existing transcript and generated summary!', 'success');
+                    // Show the simplified generation button
+                    generationButton.style.display = 'flex';
                 }
                 
                 resultContainer.style.display = 'block';
@@ -404,18 +485,6 @@
                     originalTranscript = response.transcript;
                     transcriptContainer.style.display = 'block';
                     
-                    if (!wasGenerateRequest) {
-                        generationPanel.style.display = 'block';
-                        document.querySelector('#generation-panel .info-text').innerHTML = `
-                            <div class="transcript-notice">
-                                <h3>Not satisfied with the existing transcript? Generate a new one with our AI.</h3>
-                                <p class="info">If you think the current transcript is good enough, there's no need to generate a new one.</p>
-                                <p class="warning">⚠️ <strong>Important Notice:</strong> Generating a new transcript may take <strong>10 to 100 minutes</strong>, or even longer, depending on the length and complexity of the audio. Please be patient while the process runs.</p>
-                                <p class="refresh-warning">🔄 <strong>Do not refresh the page!</strong> If you refresh or leave the page, the transcription process will restart from the beginning.</p>
-                            </div>
-                        `;
-                    }
-
                     transcriptContent.innerHTML = '';
                     if (response.source === 'generated') {
                         const lines = response.transcript.split('\n');
@@ -461,11 +530,13 @@
             } else if (response.status === 'not_found') {
                 setStatus(response.message, 'error');
                 generationPanel.style.display = 'block';
+                generationButton.style.display = 'none';
                 document.querySelector('#generation-panel .info-text').textContent = 
                     'No existing transcript found. Generate a new transcript with our AI.';
             } else {
                 setStatus(`Error: ${response.message}`, 'error');
                 generationPanel.style.display = 'block';
+                generationButton.style.display = 'none';
                 document.querySelector('#generation-panel .info-text').textContent = 
                     'Error fetching transcript. Try generating a new one instead.';
             }
