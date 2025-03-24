@@ -35,7 +35,11 @@ SEGMENT_LENGTH_MS = 10 * 60 * 1000  # 10 minutes
 
 # [其他路由保持不变，如 /, /api/health, /download, /models 等]
  
-SELECTED_MODEL = "small"  # Default to small
+ 
+# Available Whisper models
+WHISPER_MODELS = {}
+SELECTED_MODEL = "small"  # Default to small, change to "medium" for better accuracy 
+
 
  
 
@@ -216,27 +220,32 @@ def generate_summary(transcript):
         # Build dynamic prompt based on content analysis
         system_instruction = (
             "You are an expert summarizer with the ability to adapt to different content types. "
-            "Create a concise yet comprehensive summary that captures the essential information."
+            "Create a concise yet comprehensive summary in Chinese language that captures the essential information, "
+            "regardless of the source language."
+            "Both titles and content should be in pure Chinese characters only, without adding pinyin annotations."
         )
         
-        format_instruction = "Organize the summary with clear structure using appropriate headings and paragraphs. "
+        format_instruction = "Organize the summary with clear structure using appropriate headings and paragraphs in Chinese. "
         
         if is_technical:
             content_guidance = (
                 "This appears to be technical content. Preserve key technical details, definitions, and processes. "
                 "Maintain technical accuracy while making complex concepts accessible. "
                 "Use bullet points for steps or specifications if appropriate. "
+                "The summary should be in Chinese regardless of the source language."
             )
         elif is_narrative:
             content_guidance = (
                 "This appears to be narrative content. Capture the main storyline, key events, and important themes. "
                 "Preserve the narrative flow while condensing repetitive elements. "
                 "Maintain the emotional tone of the original. "
+                "The summary should be in Chinese regardless of the source language."
             )
         else:
             content_guidance = (
                 "Focus on extracting the main points, key supporting details, and overall message. "
                 "Identify and include important examples, statistics or quotes that substantiate main points. "
+                "The summary should be in Chinese regardless of the source language."
             )
         
         length_instruction = (
@@ -256,7 +265,7 @@ def generate_summary(transcript):
         )
 
         # Generate summary
-        logging.info(f"Requesting smart summary from Gemini ({GEMINI_MODEL})")
+        logging.info(f"Requesting Chinese summary from Gemini ({GEMINI_MODEL})")
         response = model.generate_content(prompt)
         
         if response and response.text:
@@ -264,7 +273,7 @@ def generate_summary(transcript):
             summary_length = len(summary)
             summary_words = len(summary.split())
             
-            logging.info(f"Generated summary: {summary_length} chars, {summary_words} words")
+            logging.info(f"Generated Chinese summary: {summary_length} chars, {summary_words} words")
 
             # Check if summary is significantly off-target in length (±40%)
             if not (target_length * 0.6 <= summary_length <= target_length * 1.4):
@@ -273,15 +282,17 @@ def generate_summary(transcript):
                 # Adjust strategy based on whether summary is too long or too short
                 if summary_length > target_length * 1.4:
                     adjustment_prompt = (
-                        "The summary you provided is too long. Please condense it further while preserving all key points. "
-                        f"The target length is approximately {target_length} characters (about {target_words} words). "
-                        "Focus on the most important information and remove unnecessary details."
+                        "The Chinese summary you provided is too long. Please condense it further while preserving all key points. "
+                        f"The target length is approximately {target_length} characters. "
+                        "Focus on the most important information and remove unnecessary details. "
+                        "Keep the summary in Chinese."
                     )
                 else:
                     adjustment_prompt = (
-                        "The summary you provided is too brief. Please expand it with more details while maintaining conciseness. "
-                        f"The target length is approximately {target_length} characters (about {target_words} words). "
-                        "Include more context and supporting details for important points."
+                        "The Chinese summary you provided is too brief. Please expand it with more details while maintaining conciseness. "
+                        f"The target length is approximately {target_length} characters. "
+                        "Include more context and supporting details for important points. "
+                        "Keep the summary in Chinese."
                     )
                 
                 # Send adjustment request with original summary
@@ -293,7 +304,7 @@ def generate_summary(transcript):
                     adjusted_length = len(adjusted_summary)
                     adjusted_words = len(adjusted_summary.split())
                     
-                    logging.info(f"Adjusted summary: {adjusted_length} chars, {adjusted_words} words")
+                    logging.info(f"Adjusted Chinese summary: {adjusted_length} chars, {adjusted_words} words")
                     
                     # Use adjusted summary if it's closer to target
                     if abs(adjusted_length - target_length) < abs(summary_length - target_length):
@@ -376,8 +387,6 @@ def detect_language(text):
     
     # Default to 'en' (English) or other Latin-script languages
     return 'en'
-
-
 
 
 
