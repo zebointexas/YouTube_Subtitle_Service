@@ -148,70 +148,156 @@ def download_subtitles():
         return jsonify({'status': 'error', 'message': f'Download failed: {str(e)}'})
 
 
+
+
 def generate_summary(transcript):
-    """使用 Gemini API 生成动态长度的详细文本总结"""
+    """Generate an intelligent and flexible summary based on input content characteristics"""
     try:
-        # 清理输入，保留所有文本
+        # Clean and prepare the input text
         lines = set()
         for line in transcript.split('\n'):
+            # Handle both timestamp formats: [00:00:00] and [00:00:00 --> 00:00:00]
             if '] ' in line:
                 text = line.split('] ', 1)[1].strip()
                 if text:
                     lines.add(text)
+        
         clean_text = " ".join(lines)
         
         if not clean_text.strip():
             return "No content to summarize."
 
+        # Analyze input text characteristics
         input_length = len(clean_text)
-        logging.info(f"Input length: {input_length} characters")
+        word_count = len(clean_text.split())
+        avg_word_length = input_length / max(1, word_count)
+        
+        logging.info(f"Input analysis: {input_length} chars, {word_count} words, {avg_word_length:.2f} avg word length")
 
-        # 如果文本超长，截断到 Gemini 支持的最大上下文（保守估计 1.5M 字符）
+        # Truncate if exceeding Gemini context limits
         if input_length > 1500000:
             logging.warning("Input exceeds recommended length, truncating to 1.5M characters")
             clean_text = clean_text[:1500000]
+            word_count = len(clean_text.split())
 
-        # 根据输入长度动态设定目标总结长度（字符数）
-        # 目标长度为输入的 10%-20%，但设置最小 500 字符（约 100 字），最大 5000 字符（约 1000 字）
-        target_length = max(500, min(5000, int(input_length * 0.15)))  # 15% 为基准
-        logging.info(f"Target summary length: {target_length} characters")
+        # Dynamic summary sizing parameters based on content length and complexity
+        # Shorter content gets proportionally longer summaries (higher %)
+        if word_count < 1000:  # Very short content (~5 mins of speech)
+            summary_ratio = 0.25  # 25% of original
+            min_chars = 300
+            max_chars = 1000
+        elif word_count < 3000:  # Medium content (~15 mins of speech)
+            summary_ratio = 0.18  # 18% of original
+            min_chars = 500
+            max_chars = 2000
+        elif word_count < 10000:  # Longer content (~50 mins speech)
+            summary_ratio = 0.12  # 12% of original
+            min_chars = 1000
+            max_chars = 3500
+        else:  # Very long content (1+ hour speech)
+            summary_ratio = 0.08  # 8% of original
+            min_chars = 1500
+            max_chars = 5000
+        
+        # Calculate target length within constraints
+        target_length = max(min_chars, min(max_chars, int(input_length * summary_ratio)))
+        target_words = int(target_length / avg_word_length)
+        
+        logging.info(f"Target summary: ~{target_length} chars, ~{target_words} words ({summary_ratio*100:.1f}% of original)")
 
-        # 创建 Gemini 模型实例
+        # Create Gemini model instance
         model = genai.GenerativeModel(GEMINI_MODEL)
-
-        # 设计动态提示，要求根据内容调整长度并保持结构化
+        
+        # Analyze content type to determine summarization approach
+        is_technical = check_if_technical(clean_text)
+        is_narrative = check_if_narrative(clean_text)
+        content_language = detect_language(clean_text)
+        
+        # Build dynamic prompt based on content analysis
+        system_instruction = (
+            "You are an expert summarizer with the ability to adapt to different content types. "
+            "Create a concise yet comprehensive summary that captures the essential information."
+        )
+        
+        format_instruction = "Organize the summary with clear structure using appropriate headings and paragraphs. "
+        
+        if is_technical:
+            content_guidance = (
+                "This appears to be technical content. Preserve key technical details, definitions, and processes. "
+                "Maintain technical accuracy while making complex concepts accessible. "
+                "Use bullet points for steps or specifications if appropriate. "
+            )
+        elif is_narrative:
+            content_guidance = (
+                "This appears to be narrative content. Capture the main storyline, key events, and important themes. "
+                "Preserve the narrative flow while condensing repetitive elements. "
+                "Maintain the emotional tone of the original. "
+            )
+        else:
+            content_guidance = (
+                "Focus on extracting the main points, key supporting details, and overall message. "
+                "Identify and include important examples, statistics or quotes that substantiate main points. "
+            )
+        
+        length_instruction = (
+            f"Aim for approximately {target_length} characters (about {target_words} words), "
+            f"which is approximately {summary_ratio*100:.1f}% of the original text length. "
+            "Adjust the level of detail appropriately to meet this target while preserving key information. "
+        )
+        
+        # Combine instructions into full prompt
         prompt = (
-            "You are an expert summarizer. Summarize the following text in a detailed and structured way. "
-            f"Adjust the summary length to approximately {target_length} characters (about {target_length // 5} words), "
-            "ensuring it captures the main points, key details, and overall narrative proportionally to the input length. "
-            "Organize the summary into clear sections (e.g., introduction, main content, conclusion) and reflect the tone and intent of the original text. "
-            "Do not omit critical information and provide an accurate, engaging overview:\n\n"
+            f"{system_instruction}\n\n"
+            f"{content_guidance}\n"
+            f"{format_instruction}\n"
+            f"{length_instruction}\n\n"
+            "TEXT TO SUMMARIZE:\n\n"
             f"{clean_text}"
         )
 
-        # 调用 Gemini API
-        logging.info("Sending request to Gemini API for dynamic summarization")
+        # Generate summary
+        logging.info(f"Requesting smart summary from Gemini ({GEMINI_MODEL})")
         response = model.generate_content(prompt)
         
         if response and response.text:
             summary = response.text.strip()
             summary_length = len(summary)
-            logging.info(f"Generated summary length: {summary_length} characters")
+            summary_words = len(summary.split())
+            
+            logging.info(f"Generated summary: {summary_length} chars, {summary_words} words")
 
-            # 如果总结长度偏差过大（±50%），尝试重新生成
-            if not (target_length * 0.5 <= summary_length <= target_length * 1.5):
-                logging.warning(f"Summary length {summary_length} deviates from target {target_length}, retrying")
-                retry_prompt = (
-                    "The previous summary length was not suitable. "
-                    f"Please summarize the following text with a target length of approximately {target_length} characters, "
-                    "ensuring all key points are covered with appropriate depth and structure:\n\n"
-                    f"{clean_text}"
-                )
-                retry_response = model.generate_content(retry_prompt)
+            # Check if summary is significantly off-target in length (±40%)
+            if not (target_length * 0.6 <= summary_length <= target_length * 1.4):
+                logging.warning(f"Summary length {summary_length} deviates from target {target_length}, adjusting...")
+                
+                # Adjust strategy based on whether summary is too long or too short
+                if summary_length > target_length * 1.4:
+                    adjustment_prompt = (
+                        "The summary you provided is too long. Please condense it further while preserving all key points. "
+                        f"The target length is approximately {target_length} characters (about {target_words} words). "
+                        "Focus on the most important information and remove unnecessary details."
+                    )
+                else:
+                    adjustment_prompt = (
+                        "The summary you provided is too brief. Please expand it with more details while maintaining conciseness. "
+                        f"The target length is approximately {target_length} characters (about {target_words} words). "
+                        "Include more context and supporting details for important points."
+                    )
+                
+                # Send adjustment request with original summary
+                adjustment_query = f"{adjustment_prompt}\n\nCURRENT SUMMARY:\n{summary}"
+                retry_response = model.generate_content(adjustment_query)
+                
                 if retry_response and retry_response.text:
-                    summary = retry_response.text.strip()
-                    summary_length = len(summary)
-                    logging.info(f"Retry summary length: {summary_length} characters")
+                    adjusted_summary = retry_response.text.strip()
+                    adjusted_length = len(adjusted_summary)
+                    adjusted_words = len(adjusted_summary.split())
+                    
+                    logging.info(f"Adjusted summary: {adjusted_length} chars, {adjusted_words} words")
+                    
+                    # Use adjusted summary if it's closer to target
+                    if abs(adjusted_length - target_length) < abs(summary_length - target_length):
+                        summary = adjusted_summary
 
             return summary
         else:
@@ -221,7 +307,79 @@ def generate_summary(transcript):
     except Exception as e:
         logging.error(f"Summary generation failed with Gemini API: {str(e)}")
         return f"Error generating summary: {str(e)}"
+
+# Helper functions for content analysis
+
+def check_if_technical(text):
+    """Determine if content appears to be technical in nature"""
+    # Technical indicators: high frequency of specialized terms, numbers, measurements
+    technical_indicators = [
+        'algorithm', 'technical', 'function', 'data', 'system', 'method',
+        'analysis', 'equation', 'process', 'procedure', 'implementation',
+        'configuration', 'parameters', 'specification', 'architecture',
+        'component', 'device', 'module', 'interface', 'protocol', 'framework'
+    ]
     
+    # Count technical terms
+    word_count = len(text.split())
+    technical_count = sum(1 for indicator in technical_indicators if indicator.lower() in text.lower())
+    
+    # Check for numerical density (percentage of words that contain numbers)
+    words = text.split()
+    numerical_count = sum(1 for word in words if any(char.isdigit() for char in word))
+    numerical_density = numerical_count / max(1, word_count)
+    
+    # Return true if either technical term density is high or numerical density is high
+    return (technical_count / max(1, word_count) > 0.01) or (numerical_density > 0.05)
+
+def check_if_narrative(text):
+    """Determine if content appears to be narrative/storytelling in nature"""
+    # Narrative indicators: personal pronouns, past tense verbs, time references
+    narrative_indicators = [
+        ' I ', ' me ', ' my ', ' we ', ' our ', ' us ',
+        'story', 'experience', 'journey', 'remember', 'recall',
+        'happened', 'occurred', 'felt', 'thought', 'believed',
+        'said', 'told', 'asked', 'replied', 'answered',
+        'yesterday', 'last week', 'years ago', 'once', 'when'
+    ]
+    
+    # Count narrative markers
+    narrative_count = sum(1 for indicator in narrative_indicators if f' {indicator.lower()} ' in f' {text.lower()} ')
+    word_count = len(text.split())
+    
+    # Return true if narrative markers density is moderately high
+    return narrative_count / max(1, word_count) > 0.015
+
+def detect_language(text):
+    """Simple language detection"""
+    # This is a simplified detection - in a full implementation, you might use a language detection library
+    # We're checking for common characters in different scripts as a basic proxy
+    
+    # Sample first 1000 characters for efficiency
+    sample = text[:1000].lower()
+    
+    # Check for Chinese characters
+    if any('\u4e00' <= char <= '\u9fff' for char in sample):
+        return 'zh'
+    
+    # Check for Japanese-specific characters (hiragana, katakana)
+    if any('\u3040' <= char <= '\u30ff' for char in sample):
+        return 'ja'
+    
+    # Check for Korean hangul
+    if any('\uac00' <= char <= '\ud7a3' for char in sample):
+        return 'ko'
+    
+    # Check for Cyrillic (Russian and related)
+    if any('\u0400' <= char <= '\u04ff' for char in sample):
+        return 'ru'
+    
+    # Default to 'en' (English) or other Latin-script languages
+    return 'en'
+
+
+
+
 
 def is_valid_video_url(url):
     """Check if the URL is a valid YouTube URL"""
