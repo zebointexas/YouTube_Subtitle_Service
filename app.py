@@ -3,37 +3,44 @@ import subprocess
 import os
 import requests
 from bs4 import BeautifulSoup
-import whisper
-from pydub import AudioSegment
 import logging
 import json
 import shutil
 import time
- 
-from transformers import pipeline  # Import transformers for summarization
-from transformers import BartTokenizer
-
+import base64
+from pydub import AudioSegment
+import google.generativeai as genai
 
 # Configure logging for debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
 
-# Available Whisper models
-WHISPER_MODELS = {}
-SELECTED_MODEL = "small"  # Default to small, change to "medium" for better accuracy
-
-# Audio segment length (in milliseconds, 15 minutes per segment)
-SEGMENT_LENGTH_MS = 15 * 60 * 1000  # 15 minutes
-
 # Temporary directory for audio files
 TEMP_DIR = "temp_audio_files"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 
-# Global variables (for efficiency)
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-tokenizer = BartTokenizer.from_pretrained("facebook/bart-large-cnn")
+# Gemini API configuration
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBgLyImS_akhGoVaGYxioyv4DtydApFKnk")  # 请替换为你的 Gemini API 密钥
+genai.configure(api_key=GOOGLE_API_KEY)
+
+GEMINI_MODEL = "gemini-1.5-flash"  # 或 "gemini-1.5-pro" 如果可用
+
+# Gemini model selection (免费层级可用 "gemini-1.5-flash" 或 "gemini-1.5-pro"，视可用性而定)
+GEMINI_MODEL = "gemini-1.5-flash"  # 免费且支持大上下文，建议使用
+
+# Audio segment length (in milliseconds, 10 minutes per segment)
+SEGMENT_LENGTH_MS = 10 * 60 * 1000  # 10 minutes
+
+# [其他路由保持不变，如 /, /api/health, /download, /models 等]
+ 
+SELECTED_MODEL = "small"  # Default to small
+
+ 
+
+
+
 
 @app.route('/')
 def index():
@@ -141,81 +148,81 @@ def download_subtitles():
         return jsonify({'status': 'error', 'message': f'Download failed: {str(e)}'})
 
 
-
 def generate_summary(transcript):
-    """Generate a detailed summary for long transcripts by splitting into chunks"""
+    """使用 Gemini API 生成动态长度的详细文本总结"""
     try:
-        # Clean the transcript
-        lines = []
+        # 清理输入，保留所有文本
+        lines = set()
         for line in transcript.split('\n'):
             if '] ' in line:
-                parts = line.split('] ', 1)
-                if len(parts) > 1 and parts[1].strip():
-                    lines.append(parts[1])
-        clean_text = "\n".join(lines)
+                text = line.split('] ', 1)[1].strip()
+                if text:
+                    lines.add(text)
+        clean_text = " ".join(lines)
         
         if not clean_text.strip():
             return "No content to summarize."
 
-        # Split into chunks of max 1024 tokens
-        max_token_length = 1024
-        tokens = tokenizer(clean_text, return_tensors="pt")["input_ids"][0]
-        total_tokens = len(tokens)
-        logging.info(f"Total tokens: {total_tokens}")
+        input_length = len(clean_text)
+        logging.info(f"Input length: {input_length} characters")
 
-        if total_tokens <= max_token_length:
-            chunks = [clean_text]
-        else:
-            # Estimate character length per chunk
-            chars_per_token = len(clean_text) / total_tokens
-            chars_per_chunk = int(chars_per_token * (max_token_length - 50))  # Leave buffer
-            chunks = [clean_text[i:i + chars_per_chunk] for i in range(0, len(clean_text), chars_per_chunk)]
-            logging.info(f"Split into {len(chunks)} chunks")
+        # 如果文本超长，截断到 Gemini 支持的最大上下文（保守估计 1.5M 字符）
+        if input_length > 1500000:
+            logging.warning("Input exceeds recommended length, truncating to 1.5M characters")
+            clean_text = clean_text[:1500000]
 
-        # Generate summaries for each chunk
-        summaries = []
-        for i, chunk in enumerate(chunks):
-            # Ensure each chunk is within token limit
-            chunk_tokens = tokenizer(chunk, truncation=True, max_length=max_token_length, return_tensors="pt")
-            truncated_chunk = tokenizer.decode(chunk_tokens["input_ids"][0], skip_special_tokens=True)
-            logging.info(f"Chunk {i + 1}/{len(chunks)}: {len(chunk_tokens['input_ids'][0])} tokens")
+        # 根据输入长度动态设定目标总结长度（字符数）
+        # 目标长度为输入的 10%-20%，但设置最小 500 字符（约 100 字），最大 5000 字符（约 1000 字）
+        target_length = max(500, min(5000, int(input_length * 0.15)))  # 15% 为基准
+        logging.info(f"Target summary length: {target_length} characters")
 
-            # Adjust summary length based on chunk size
-            chunk_length = len(truncated_chunk)
-            if chunk_length < 500:
-                min_length = 30
-                max_length = 100
-            elif chunk_length < 2000:
-                min_length = 50
-                max_length = 200
-            else:
-                min_length = 100
-                max_length = 300
+        # 创建 Gemini 模型实例
+        model = genai.GenerativeModel(GEMINI_MODEL)
 
-            summary = summarizer(
-                truncated_chunk,
-                max_length=max_length,
-                min_length=min_length,
-                do_sample=False,
-                length_penalty=1.0,
-                num_beams=4
-            )[0]['summary_text']
-            summaries.append(summary)
+        # 设计动态提示，要求根据内容调整长度并保持结构化
+        prompt = (
+            "You are an expert summarizer. Summarize the following text in a detailed and structured way. "
+            f"Adjust the summary length to approximately {target_length} characters (about {target_length // 5} words), "
+            "ensuring it captures the main points, key details, and overall narrative proportionally to the input length. "
+            "Organize the summary into clear sections (e.g., introduction, main content, conclusion) and reflect the tone and intent of the original text. "
+            "Do not omit critical information and provide an accurate, engaging overview:\n\n"
+            f"{clean_text}"
+        )
 
-        # Combine summaries
-        final_summary = " ".join(summaries)
-        # Optional: truncate final summary if too long
-        if len(final_summary) > 1000:  # Arbitrary limit for readability
-            final_summary = final_summary[:1000] + "..."
+        # 调用 Gemini API
+        logging.info("Sending request to Gemini API for dynamic summarization")
+        response = model.generate_content(prompt)
         
-        return final_summary
+        if response and response.text:
+            summary = response.text.strip()
+            summary_length = len(summary)
+            logging.info(f"Generated summary length: {summary_length} characters")
+
+            # 如果总结长度偏差过大（±50%），尝试重新生成
+            if not (target_length * 0.5 <= summary_length <= target_length * 1.5):
+                logging.warning(f"Summary length {summary_length} deviates from target {target_length}, retrying")
+                retry_prompt = (
+                    "The previous summary length was not suitable. "
+                    f"Please summarize the following text with a target length of approximately {target_length} characters, "
+                    "ensuring all key points are covered with appropriate depth and structure:\n\n"
+                    f"{clean_text}"
+                )
+                retry_response = model.generate_content(retry_prompt)
+                if retry_response and retry_response.text:
+                    summary = retry_response.text.strip()
+                    summary_length = len(summary)
+                    logging.info(f"Retry summary length: {summary_length} characters")
+
+            return summary
+        else:
+            logging.error("No summary returned from Gemini API")
+            return "Summary generation failed."
 
     except Exception as e:
-        logging.error(f"Summary generation failed: {str(e)}")
-        return f"Error: {str(e)}"
+        logging.error(f"Summary generation failed with Gemini API: {str(e)}")
+        return f"Error generating summary: {str(e)}"
     
-# Rest of your existing functions remain unchanged (is_valid_video_url, fetch_youtube_transcript, etc.)
-    
+
 def is_valid_video_url(url):
     """Check if the URL is a valid YouTube URL"""
     return url.startswith(("https://www.youtube.com/watch", 
@@ -280,16 +287,10 @@ def fetch_youtube_transcript(video_url):
         logging.error(f"Failed to fetch subtitles: {str(e)}")
         return None
 
-
 def generate_subtitles_from_audio(video_url, model_name="small", language="auto"):
-    """Generate subtitles from video audio using Whisper, handling long audio"""
+    """Generate subtitles from video audio using Hugging Face Whisper API"""
     try:
-        # 加载模型 (保持不变)
-        if model_name not in WHISPER_MODELS:
-            logging.info(f"Loading Whisper model: {model_name}")
-            WHISPER_MODELS[model_name] = whisper.load_model(model_name)
-        
-        # 下载音频 (保持不变)
+        # Download audio
         audio_file = os.path.join(TEMP_DIR, "temp_audio.mp3")
         command = [
             "yt-dlp",
@@ -302,7 +303,7 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
         logging.info(f"Downloading audio from {video_url}")
         process = subprocess.run(command, capture_output=True, text=True)
         
-        # 错误检查 (保持不变)
+        # Error checking
         if process.returncode != 0:
             logging.error(f"Failed to download audio: {process.stderr}")
             return None
@@ -318,7 +319,7 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
             logging.error("Downloaded audio file is empty")
             return None
 
-        # 加载音频 (保持不变)
+        # Load audio
         try:
             audio = AudioSegment.from_mp3(audio_file)
             audio_length_ms = len(audio)
@@ -331,18 +332,21 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
             logging.error(f"Failed to load audio file: {str(e)}")
             return None
 
-        transcript_segments = []
-        model = WHISPER_MODELS[model_name]
+        # Get Hugging Face model path
+        hf_model_path = WHISPER_MODELS.get(model_name, WHISPER_MODELS["small"])
+        api_url = f"{HF_API_URL}{hf_model_path}"
+        headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
         
-        segment_start_time = 0  # 跟踪每个片段的开始时间（秒）
+        transcript_segments = []
+        segment_start_time = 0  # Track start time of each segment (seconds)
 
-        # 分段处理
+        # Process in segments
         for start_ms in range(0, audio_length_ms, SEGMENT_LENGTH_MS):
             end_ms = min(start_ms + SEGMENT_LENGTH_MS, audio_length_ms)
             segment = audio[start_ms:end_ms]
             segment_file = os.path.join(TEMP_DIR, f"temp_audio_segment_{start_ms // 1000}.wav")
             
-            # 导出段落
+            # Export segment
             segment.export(
                 segment_file, 
                 format="wav", 
@@ -357,45 +361,66 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
                 transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Empty audio segment]")
                 continue
 
-            # 转录段落
+            # Transcribe using Hugging Face API
             try:
-                # 使用指定语言或自动检测
-                transcribe_options = {
-                    "task": "transcribe", 
-                    "verbose": True,  # 启用详细输出以获取段落级别的信息
+                with open(segment_file, "rb") as f:
+                    data = f.read()
+                    
+                # Convert audio to base64 for API
+                audio_bytes = base64.b64encode(data).decode("utf-8")
+                
+                # Prepare API parameters
+                payload = {
+                    "inputs": {
+                        "audio": audio_bytes
+                    },
+                    "parameters": {
+                        "return_timestamps": True
+                    }
                 }
+                
+                # Set language if specified
                 if language != "auto":
-                    transcribe_options["language"] = language
+                    payload["parameters"]["language"] = language
                 
-                # 使用 Whisper 的详细输出获取时间戳和段落
-                result = model.transcribe(segment_file, **transcribe_options)
+                # Submit transcription request
+                logging.info(f"Sending audio segment to Hugging Face API ({hf_model_path})")
+                response = requests.post(api_url, headers=headers, json=payload)
                 
-                if result and "segments" in result and result["segments"]:
-                    # 处理每个带时间戳的段落
-                    for segment_result in result["segments"]:
-                        # 计算绝对时间戳（考虑当前片段在整个音频中的位置）
-                        abs_start = segment_start_time + segment_result["start"]
-                        abs_end = segment_start_time + segment_result["end"]
-                        
-                        # 格式化带时间戳的文本行
-                        timestamp = f"[{format_timestamp(abs_start)} --> {format_timestamp(abs_end)}]"
-                        text = segment_result["text"].strip()
-                        
-                        if text:  # 如果文本不为空
-                            transcript_segments.append(f"{timestamp} {text}")
-                            
-                    logging.info(f"Successfully transcribed segment with {len(result['segments'])} segments")
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    # Extract segments with timestamps from response
+                    if "chunks" in result:
+                        # New API response format with chunks
+                        for chunk in result["chunks"]:
+                            if "timestamp" in chunk and chunk.get("text"):
+                                # Extract timestamp ranges
+                                ts = chunk["timestamp"]
+                                if isinstance(ts, list) and len(ts) == 2:
+                                    # Convert timestamps and adjust for segment position
+                                    abs_start = segment_start_time + ts[0]
+                                    abs_end = segment_start_time + ts[1]
+                                    
+                                    # Format timestamp
+                                    timestamp = f"[{format_timestamp(abs_start)} --> {format_timestamp(abs_end)}]"
+                                    transcript_segments.append(f"{timestamp} {chunk['text'].strip()}")
+                    elif isinstance(result, dict) and "text" in result:
+                        # Simple response without timestamps
+                        timestamp = f"[{format_timestamp(segment_start_time)}]"
+                        transcript_segments.append(f"{timestamp} {result['text'].strip()}")
                 else:
-                    logging.warning(f"Empty transcription for segment {start_ms // 1000}s to {end_ms // 1000}s")
-                    transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Inaudible segment]")
+                    logging.error(f"API error: {response.status_code}, {response.text}")
+                    transcript_segments.append(f"[{format_timestamp(segment_start_time)}] [API error: {response.status_code}]")
+                    
             except Exception as e:
                 logging.error(f"Error transcribing segment {start_ms // 1000}s to {end_ms // 1000}s: {str(e)}")
                 transcript_segments.append(f"[{format_timestamp(start_ms // 1000)}] [Transcription error]")
             
-            # 更新下一个片段的开始时间（秒）
+            # Update start time for next segment (seconds)
             segment_start_time += (end_ms - start_ms) / 1000
 
-        # 合并所有段落，每个段落一行
+        # Combine all segments
         full_transcript = "\n".join(transcript_segments)
         if not full_transcript.strip():
             logging.error("Generated transcript is empty")
@@ -408,13 +433,11 @@ def generate_subtitles_from_audio(video_url, model_name="small", language="auto"
         return None
 
 def format_timestamp(seconds):
-    """将秒数格式化为 HH:MM:SS 格式的时间戳"""
+    """Format seconds to HH:MM:SS timestamp"""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-
-
 
 def clean_temp_files():
     """Clean up all temporary files"""
@@ -439,7 +462,7 @@ def clean_temp_files():
 @app.route('/models', methods=['GET'])
 def get_models():
     """Return available Whisper models"""
-    models = ["tiny", "base", "small", "medium", "large"]
+    models = list(WHISPER_MODELS.keys())
     return jsonify({
         'models': models,
         'selected': SELECTED_MODEL
@@ -451,7 +474,7 @@ def select_model():
     global SELECTED_MODEL
     try:
         model_name = request.form['model']
-        if model_name in ["tiny", "base", "small", "medium", "large"]:
+        if model_name in WHISPER_MODELS:
             SELECTED_MODEL = model_name
             return jsonify({'status': 'success', 'message': f'Model changed to {model_name}'})
         else:
